@@ -1,0 +1,27 @@
+.Dd February 2, 2015
+.Dt FALLOCATE 1
+.Os ubase
+.Sh NAME
+.Nm fallocate
+.Nd preallocate blocks to a file
+.Sh SYNOPSIS
+.Nm
+.Op Fl o Ar offset
+.Fl l Ar length Ar file
+.Sh DESCRIPTION
+.Nm
+preallocates blocks to a file. Only certain filesystems support the
+.Xr fallocate 2
+system call.  This is a very fast operation to allocate uninitialized blocks
+in a file without doing any IO. As of the Linux kernel v2.6.31, the
+.Xr fallocate 2
+system call is supported by the btrfs, ext4, ocfs2, and xfs filesystems.
+.Sh OPTIONS
+.Bl -tag -width Ds
+.It Fl l Ar length
+Specifies the length of the allocation, in bytes.
+.It Fl o
+Specifies the beginning offset of the allocation, in bytes.
+.El
+.Sh SEE ALSO
+.Xr fallocate 2

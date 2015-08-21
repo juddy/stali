@@ -1,0 +1,126 @@
+sbase - suckless unix tools
+===========================
+
+sbase  is a  collection of  unix  tools that  are inherently  portable
+across UNIX and UNIX-like systems.
+
+The following tools are implemented:
+
+'#'  -> UTF-8 support, '=' -> Implicit UTF-8 support, '*' -> Finished,
+'|'  -> Audited,       'o' -> POSIX 2013 compliant,   'x' -> Non-POSIX,
+'()' -> Petty flag
+
+     UTILITY     MISSING FLAGS
+     -------     -------------
+=*|o basename    .
+=*|o cal         .
+=*|o cat         .
+=*|o chgrp       .
+=*|o chmod       .
+=*|o chown       .
+=*|x chroot      .
+=*|o cksum       .
+=*|o cmp         .
+#*|x cols        .
+=*|o comm        .
+=*|o cp          (-i)
+=*|x cron        .
+#*|o cut         .
+=*|o date        .
+=*|o dirname     .
+=*|o du          .
+=*|o echo        .
+=*|o env         .
+#*|o expand      .
+#*|o expr        .
+=*|o false       .
+=    find        .
+#*|o fold        .
+=* o grep        .
+=*|o head        .
+=*|x hostname    .
+=* o join        .
+=*|o kill        .
+=*|o link        .
+=*|o ln          .
+=*|o logger      .
+=*|o logname     .
+#* o ls          (-C, -k, -m, -p, -s, -x)
+=*|x md5sum      .
+=*|o mkdir       .
+=*|o mkfifo      .
+=*|x mktemp      .
+=*|o mv          (-i)
+=*|o nice        .
+#*|o nl          .
+=*|o nohup       .
+#*|o paste       .
+=*|x printenv    .
+#*|o printf      .
+=*|o pwd         .
+=*|x readlink    .
+=*|o renice      .
+=*|o rm          (-i)
+=*|o rmdir       .
+#    sed         .
+=*|x seq         .
+=*|x setsid      .
+=*|x sha1sum     .
+=*|x sha256sum   .
+=*|x sha512sum   .
+=*|o sleep       .
+     sort        -d, -f, -i
+=*|o split       .
+=*|x sponge      .
+#*|o strings     .
+=*|x sync        .
+=*|o tail        .
+=*|x tar         .
+=*|o tee         .
+=*|o test        .
+=*|o time        .
+=*|o touch       .
+#*|o tr          .
+=*|o true        .
+=*|o tty         .
+=*|o uname       .
+#*|o unexpand    .
+=*|o uniq        .
+=*|o unlink      .
+=*|o uudecode    .
+=*|o uuencode    .
+#*|o wc          .
+=*|x which       .
+=*|o xargs       (-p)
+=*|x yes         .
+
+The  complement of  sbase  is  ubase[1] which  is  Linux-specific  and
+provides all  the non-portable tools.   Together they are  intended to
+form a base system similar to busybox but much smaller and suckless.
+
+Building
+--------
+
+To  build sbase,  simply  type  make.  You  may  have  to fiddle  with
+config.mk depending on your system.
+
+You  can  also  build  sbase-box,  which  generates  a  single  binary
+containing  all  the  required  tools.    You  can  then  symlink  the
+individual tools to sbase-box or run: make sbase-box-install
+
+Ideally you will  want to statically link sbase.  If  you are on Linux
+we recommend using musl-libc[2].
+
+Portability
+-----------
+
+sbase has been  compiled on a variety of  different operating systems,
+including Linux, *BSD, OSX, Haiku, Solaris, SCO OpenServer and others.
+
+Various combinations of operating  systems and architectures have also
+been built.
+
+You can build sbase with gcc, clang, tcc, nwcc and pcc.
+
+[1] http://git.suckless.org/ubase/
+[2] http://www.musl-libc.org/

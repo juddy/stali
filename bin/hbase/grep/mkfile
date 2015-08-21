@@ -1,0 +1,19 @@
+BIN = grep
+OBJ = alloc.o grep.o grid.o plist.o rcomp.o sus.o ac.o
+LOCAL_CFLAGS = -DSU3
+INSTALL_BIN = grep
+INSTALL_MAN1 = grep.1 egrep.1 fgrep.1
+INSTALL_SYMLINK = \
+	grep /bin/egrep \
+	grep /bin/fgrep
+DEPS = libcommon
+
+<$mkbuild/mk.common
+
+grep: $OBJ
+
+grep.o: grep.h config.h alloc.h
+plist.o: grep.h config.h alloc.h
+sus.o: grep.h config.h alloc.h
+ac.o: alloc.h grep.h
+rcomp.o: grep.h config.h alloc.h
