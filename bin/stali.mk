@@ -7,6 +7,7 @@ SUBDIRS = hbase\
 	smdev\
 	utmp\
 	mksh\
-	e2fsprogs
+	e2fsprogs\
+	libarchive
 
 include $(ROOT)/mk/dir.mk

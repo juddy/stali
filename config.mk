@@ -2,7 +2,7 @@
 VERSION = 0.0
 
 # paths
-DESTDIR=$(HOME)/test/
+DESTDIR=$(HOME)/test
 PREFIX = /
 MANPREFIX = $(PREFIX)/share/man
 
