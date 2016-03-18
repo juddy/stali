@@ -1,12 +1,12 @@
-/*	$OpenBSD: main.c,v 1.55 2015/02/09 09:09:30 jsg Exp $	*/
+/*	$OpenBSD: main.c,v 1.57 2015/09/10 22:48:58 nicm Exp $	*/
 /*	$OpenBSD: tty.c,v 1.10 2014/08/10 02:44:26 guenther Exp $	*/
-/*	$OpenBSD: io.c,v 1.25 2014/08/11 20:28:47 guenther Exp $	*/
-/*	$OpenBSD: table.c,v 1.15 2012/02/19 07:52:30 otto Exp $	*/
+/*	$OpenBSD: io.c,v 1.26 2015/09/11 08:00:27 guenther Exp $	*/
+/*	$OpenBSD: table.c,v 1.16 2015/09/01 13:12:31 tedu Exp $	*/
 
 /*-
  * Copyright (c) 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
- *		 2011, 2012, 2013, 2014, 2015
- *	Thorsten Glaser <tg@mirbsd.org>
+ *		 2011, 2012, 2013, 2014, 2015, 2016
+ *	mirabilos <m@mirbsd.org>
  *
  * Provided that these terms and disclaimer and all copyright notices
  * are retained or reproduced in an accompanying document, permission
@@ -34,7 +34,7 @@
 #include <locale.h>
 #endif
 
-__RCSID("$MirOS: src/bin/mksh/main.c,v 1.300 2015/07/10 19:36:35 tg Exp $");
+__RCSID("$MirOS: src/bin/mksh/main.c,v 1.310 2016/02/26 21:53:36 tg Exp $");
 
 extern char **environ;
 
@@ -71,18 +71,12 @@ static const char *initcoms[] = {
 	/* not "alias -t --": hash -r needs to work */
 	"hash=\\builtin alias -t",
 	"type=\\builtin whence -v",
-#if !defined(ANDROID) && !defined(MKSH_UNEMPLOYED)
-	/* not in Android for political reasons */
-	/* not in ARGE mksh due to no job control */
-	"stop=\\kill -STOP",
-#endif
 	"autoload=\\typeset -fu",
 	"functions=\\typeset -f",
 	"history=\\builtin fc -l",
 	"nameref=\\typeset -n",
 	"nohup=nohup ",
 	"r=\\builtin fc -e -",
-	"source=PATH=$PATH" MKSH_PATHSEPS ". \\command .",
 	"login=\\exec login",
 	NULL,
 	 /* this is what AT&T ksh seems to track, with the addition of emacs */
@@ -116,13 +110,13 @@ rndsetup(void)
 	} *bufptr;
 	char *cp;
 
-	cp = alloc(sizeof(*bufptr) - ALLOC_SIZE, APERM);
+	cp = alloc(sizeof(*bufptr) - sizeof(ALLOC_ITEM), APERM);
 #ifdef DEBUG
 	/* clear the allocated space, for valgrind */
-	memset(cp, 0, sizeof(*bufptr) - ALLOC_SIZE);
+	memset(cp, 0, sizeof(*bufptr) - sizeof(ALLOC_ITEM));
 #endif
 	/* undo what alloc() did to the malloc result address */
-	bufptr = (void *)(cp - ALLOC_SIZE);
+	bufptr = (void *)(cp - sizeof(ALLOC_ITEM));
 	/* PIE or something similar provides us with deltas here */
 	bufptr->dataptr = &rndsetupstate;
 	/* ASLR in at least Windows, Linux, some BSDs */
@@ -136,6 +130,9 @@ rndsetup(void)
 	/* introduce variation (and yes, second arg MBZ for portability) */
 	mksh_TIME(bufptr->tv);
 
+#ifdef MKSH_ALLOC_CATCH_UNDERRUNS
+	mprotect(((char *)bufptr) + 4096, 4096, PROT_READ | PROT_WRITE);
+#endif
 	h = chvt_rndsetup(bufptr, sizeof(*bufptr));
 
 	afree(cp, APERM);
@@ -202,7 +199,7 @@ main_init(int argc, const char *argv[], Source **sp, struct block **lp)
 	/* do things like getpgrp() et al. */
 	chvt_reinit();
 
-	/* make sure argv[] is sane */
+	/* make sure argv[] is sane, for weird OSes */
 	if (!*argv) {
 		argv = empty_argv;
 		argc = 1;
@@ -211,6 +208,8 @@ main_init(int argc, const char *argv[], Source **sp, struct block **lp)
 
 	/* initialise permanent Area */
 	ainit(&aperm);
+	/* max. name length: -2147483648 = 11 (+ NUL) */
+	vtemp = alloc(offsetof(struct tbl, name[0]) + 12, APERM);
 
 	/* set up base environment */
 	env.type = E_NONE;
@@ -255,7 +254,7 @@ main_init(int argc, const char *argv[], Source **sp, struct block **lp)
 
 	/* define built-in commands and see if we were called as one */
 	ktinit(APERM, &builtins,
-	    /* currently up to 51 builtins: 75% of 128 = 2^7 */
+	    /* currently up to 54 builtins: 75% of 128 = 2^7 */
 	    7);
 	for (i = 0; mkshbuiltins[i].name != NULL; i++)
 		if (!strcmp(ccp, builtin(mkshbuiltins[i].name,
@@ -416,11 +415,7 @@ main_init(int argc, const char *argv[], Source **sp, struct block **lp)
 	setint_n((vp_pipest = global("PIPESTATUS")), 0, 10);
 
 	/* Set this before parsing arguments */
-	Flag(FPRIVILEGED) = (
-#if HAVE_ISSETUGID
-	    issetugid() ||
-#endif
-	    kshuid != ksheuid || kshgid != kshegid) ? 2 : 0;
+	Flag(FPRIVILEGED) = (kshuid != ksheuid || kshgid != kshegid) ? 2 : 0;
 
 	/* this to note if monitor is set on command line (see below) */
 #ifndef MKSH_UNEMPLOYED
@@ -445,7 +440,7 @@ main_init(int argc, const char *argv[], Source **sp, struct block **lp)
 	} else if (Flag(FCOMMAND)) {
 		s = pushs(SSTRINGCMDLINE, ATEMP);
 		if (!(s->start = s->str = argv[argi++]))
-			errorf("%s %s", "-c", "requires an argument");
+			errorf("-c %s", "requires an argument");
 		while (*s->str) {
 			if (*s->str != ' ' && ctype(*s->str, C_QUOTE))
 				break;
@@ -714,7 +709,7 @@ include(const char *name, int argc, const char **argv, bool intr_ok)
 			unwind(i);
 			/* NOTREACHED */
 		default:
-			internal_errorf("%s %d", "include", i);
+			internal_errorf("include %d", i);
 			/* NOTREACHED */
 		}
 	}
@@ -806,7 +801,7 @@ shell(Source * volatile s, volatile bool toplevel)
 	default:
 		source = old_source;
 		quitenv(NULL);
-		internal_errorf("%s %d", "shell", i);
+		internal_errorf("shell %d", i);
 		/* NOTREACHED */
 	}
 	while (/* CONSTCOND */ 1) {
@@ -936,9 +931,9 @@ newenv(int type)
 	 * struct env includes ALLOC_ITEM for alignment constraints
 	 * so first get the actually used memory, then assign it
 	 */
-	cp = alloc(sizeof(struct env) - ALLOC_SIZE, ATEMP);
+	cp = alloc(sizeof(struct env) - sizeof(ALLOC_ITEM), ATEMP);
 	/* undo what alloc() did to the malloc result address */
-	ep = (void *)(cp - ALLOC_SIZE);
+	ep = (void *)(cp - sizeof(ALLOC_ITEM));
 	/* initialise public members of struct env (not the ALLOC_ITEM) */
 	ainit(&ep->area);
 	ep->oenv = e;
@@ -1034,7 +1029,7 @@ quitenv(struct shf *shf)
 
 	/* free the struct env - tricky due to the ALLOC_ITEM inside */
 	cp = (void *)ep;
-	afree(cp + ALLOC_SIZE, ATEMP);
+	afree(cp + sizeof(ALLOC_ITEM), ATEMP);
 }
 
 /* Called after a fork to cleanup stuff left over from parents environment */
@@ -1269,8 +1264,7 @@ bi_errorf(const char *fmt, ...)
 
 	/*
 	 * POSIX special builtins and ksh special builtins cause
-	 * non-interactive shells to exit.
-	 * XXX odd use of KEEPASN; also may not want LERROR here
+	 * non-interactive shells to exit. XXX may not want LERROR here
 	 */
 	if (builtin_spec) {
 		builtin_argv0 = NULL;

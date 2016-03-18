@@ -1,12 +1,12 @@
-/*	$OpenBSD: edit.c,v 1.40 2015/03/12 10:20:30 sthen Exp $	*/
+/*	$OpenBSD: edit.c,v 1.41 2015/09/01 13:12:31 tedu Exp $	*/
 /*	$OpenBSD: edit.h,v 1.9 2011/05/30 17:14:35 martynas Exp $	*/
-/*	$OpenBSD: emacs.c,v 1.50 2015/03/25 12:10:52 jca Exp $	*/
-/*	$OpenBSD: vi.c,v 1.28 2013/12/18 16:45:46 deraadt Exp $	*/
+/*	$OpenBSD: emacs.c,v 1.52 2015/09/10 22:48:58 nicm Exp $	*/
+/*	$OpenBSD: vi.c,v 1.30 2015/09/10 22:48:58 nicm Exp $	*/
 
 /*-
  * Copyright (c) 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
- *		 2011, 2012, 2013, 2014
- *	Thorsten Glaser <tg@mirbsd.org>
+ *		 2011, 2012, 2013, 2014, 2015, 2016
+ *	mirabilos <m@mirbsd.org>
  *
  * Provided that these terms and disclaimer and all copyright notices
  * are retained or reproduced in an accompanying document, permission
@@ -28,7 +28,7 @@
 
 #ifndef MKSH_NO_CMDLINE_EDITING
 
-__RCSID("$MirOS: src/bin/mksh/edit.c,v 1.290 2015/07/10 19:36:34 tg Exp $");
+__RCSID("$MirOS: src/bin/mksh/edit.c,v 1.294 2016/03/04 14:26:12 tg Exp $");
 
 /*
  * in later versions we might use libtermcap for this, but since external
@@ -381,7 +381,7 @@ x_file_glob(int *flagsp, char *toglob, char ***wordsp)
 	source = s;
 	if (yylex(ONEWORD | LQCHAR) != LWORD) {
 		source = sold;
-		internal_warningf("%s: %s", "fileglob", "bad substitution");
+		internal_warningf(Tfg_badsubst);
 		return (0);
 	}
 	source = sold;
@@ -2262,12 +2262,8 @@ x_kill(int c MKSH_A_UNUSED)
 static void
 x_push(int nchars)
 {
-	char *cp;
-
-	strndupx(cp, xcp, nchars, AEDIT);
-	if (killstack[killsp])
-		afree(killstack[killsp], AEDIT);
-	killstack[killsp] = cp;
+	afree(killstack[killsp], AEDIT);
+	strndupx(killstack[killsp], xcp, nchars, AEDIT);
 	killsp = (killsp + 1) % KILLSIZE;
 }
 
@@ -2520,7 +2516,7 @@ x_bind(const char *a1, const char *a2,
 		m1 = msg;
 		while (*c && (size_t)(m1 - msg) < sizeof(msg) - 3)
 			x_mapout2(*c++, &m1);
-		bi_errorf("%s: %s", "too long key sequence", msg);
+		bi_errorf("too long key sequence: %s", msg);
 		return (1);
 	}
 #ifndef MKSH_SMALL
@@ -2544,7 +2540,7 @@ x_bind(const char *a1, const char *a2,
 			if (!strcmp(x_ftab[f].xf_name, a2))
 				break;
 		if (f == NELEM(x_ftab) || x_ftab[f].xf_flags & XF_NOBIND) {
-			bi_errorf("%s: %s %s", a2, "no such", Tfunction);
+			bi_errorf("%s: no such function", a2);
 			return (1);
 		}
 	}
@@ -4601,8 +4597,8 @@ vi_cmd(int argcnt, const char *cmd)
 static int
 domove(int argcnt, const char *cmd, int sub)
 {
-	int bcount, i = 0, t;
-	int ncursor = 0;
+	int ncursor = 0, i = 0, t;
+	unsigned int bcount;
 
 	switch (*cmd) {
 	case 'b':
@@ -5055,7 +5051,7 @@ grabhist(int save, int n)
 	}
 	(void)histnum(n);
 	if ((hptr = *histpos()) == NULL) {
-		internal_warningf("%s: %s", "grabhist", "bad history array");
+		internal_warningf("grabhist: bad history array");
 		return (-1);
 	}
 	if (save)

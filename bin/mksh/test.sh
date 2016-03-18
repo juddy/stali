@@ -1,7 +1,7 @@
-#!/home/anselm/src/bin/mksh/sh
-LC_ALL=C PATH='/opt/cross-stali/x86_64-linux-musl/bin/:/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games:/usr/local/plan9/bin'; export LC_ALL PATH
+#!/home/anselm/src/bin/mksh/mksh
+LC_ALL=C PATH='/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games'; export LC_ALL PATH
 test -n "$KSH_VERSION" || exit 1
-set -A check_categories --  shell:legacy-no int:32 stdout-ed,no-stderr-ed
+set -A check_categories --  shell:legacy-no int:32
 pflag='/home/anselm/src/bin/mksh/mksh'
 sflag='./check.t'
 usee=0 Pflag=0 Sflag=0 uset=0 vflag=1 xflag=0
@@ -49,9 +49,9 @@ args[${#args[*]}]=-T
 args[${#args[*]}]=$TMPDIR
 fi
 print Testing mksh for conformance:
-fgrep -e MirOS: -e MIRBSD "$sflag"
+grep -F -e Mir''OS: -e MIRBSD "$sflag"
 print "This shell is actually:\n\t$KSH_VERSION"
-print 'test.sh built for mksh R51 2015/07/10'
+print 'test.sh built for mksh R52 2016/03/04'
 cstr='$os = defined $^O ? $^O : "unknown";'
 cstr="$cstr"'print $os . ", Perl version " . $];'
 for perli in $PERL perl5 perl no; do

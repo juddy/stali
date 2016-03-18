@@ -1,9 +1,9 @@
-.\" $MirOS: src/bin/mksh/mksh.1,v 1.377 2015/07/10 19:35:39 tg Exp $
+.\" $MirOS: src/bin/mksh/mksh.1,v 1.392 2016/03/04 18:28:41 tg Exp $
 .\" $OpenBSD: ksh.1,v 1.160 2015/07/04 13:27:04 feinerer Exp $
 .\"-
 .\" Copyright © 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009,
-.\"		2010, 2011, 2012, 2013, 2014, 2015
-.\"	Thorsten “mirabilos” Glaser <tg@mirbsd.org>
+.\"		2010, 2011, 2012, 2013, 2014, 2015, 2016
+.\"	mirabilos <m@mirbsd.org>
 .\"
 .\" Provided that these terms and disclaimer and all copyright notices
 .\" are retained or reproduced in an accompanying document, permission
@@ -29,7 +29,9 @@
 .\" * ^ is size-reduced and placed atop in groff, so use \*(ha
 .\" * \(en does not work in nroff, so use \*(en
 .\" * <>| are problematic, so redefine and use \*(Lt\*(Gt\*(Ba
-.\" Also make sure to use \& especially with two-letter words.
+.\" Also make sure to use \& *before* a punctuation char that is to not
+.\" be interpreted as punctuation, and especially with two-letter words
+.\" but also (after) a period that does not end a sentence (“e.g.\&”).
 .\" The section after the "doc" macropackage has been loaded contains
 .\" additional code to convene between the UCB mdoc macropackage (and
 .\" its variant as BSD mdoc in groff) and the GNU mdoc macropackage.
@@ -74,7 +76,7 @@
 .\" with -mandoc, it might implement .Mx itself, but we want to
 .\" use our own definition. And .Dd must come *first*, always.
 .\"
-.Dd $Mdocdate: July 10 2015 $
+.Dd $Mdocdate: March 4 2016 $
 .\"
 .\" Check which macro package we use, and do other -mdoc setup.
 .\"
@@ -179,6 +181,11 @@ script use.
 Its command language is a superset of the
 .Xr sh C
 shell language and largely compatible to the original Korn shell.
+At times, this manual page may give scripting advice; while it
+sometimes does take portable shell scripting or various standards
+into account all information is first and foremost presented with
+.Nm
+in mind and should be taken as such.
 .Ss I'm an Android user, so what's mksh?
 .Nm mksh
 is a
@@ -426,7 +433,7 @@ statements;
 .Ql \&(( .. ))
 is used in arithmetic expressions;
 and lastly,
-.Ql \&( .. )\&
+.Ql \&( .. \&)
 is used to create subshells.
 .Pp
 Whitespace and meta-characters can be quoted individually using a backslash
@@ -434,7 +441,7 @@ Whitespace and meta-characters can be quoted individually using a backslash
 or in groups using double
 .Pq Sq \&"
 or single
-.Pq Sq \*(aq
+.Pq Dq \*(aq
 quotes.
 Note that the following characters are also treated specially by the
 shell and must be quoted if they are to represent themselves:
@@ -914,7 +921,7 @@ is evaluated; equivalent to
 .Sx Arithmetic expressions
 and the
 .Ic let
-command, below).
+command, below) in a compound construct.
 .It Bq Bq Ar \ \&expression\ \&
 Similar to the
 .Ic test
@@ -988,7 +995,7 @@ case both the
 .Ql \e
 and the newline are stripped.
 Second, a single quote
-.Pq Sq \*(aq
+.Pq Dq \*(aq
 quotes everything up to the next single quote (this may span lines).
 Third, a double quote
 .Pq Sq \&"
@@ -997,13 +1004,14 @@ quotes all characters, except
 .Ql \`
 and
 .Ql \e ,
-up to the next unquoted double quote.
+up to the next unescaped double quote.
 .Ql $
 and
 .Ql \`
-inside double quotes have their usual meaning (i.e. parameter, command, or
-arithmetic substitution) except no field splitting is carried out on the
-results of double-quoted substitutions.
+inside double quotes have their usual meaning (i.e. parameter, arithmetic,
+or command substitution) except no field splitting is carried out on the
+results of double-quoted substitutions, and the old-style form of command
+substitution has backslash-quoting for double quotes enabled.
 If a
 .Ql \e
 inside a double-quoted string is followed by
@@ -1026,7 +1034,9 @@ characters inside can be escaped and do not terminate the string then);
 the expanded result is treated as any other single-quoted string.
 If a double-quoted string is preceded by an unquoted
 .Ql $ ,
-the latter is ignored.
+the
+.Ql $
+is simply ignored.
 .Ss Backslash expansion
 In places where backslashes are expanded, certain C and
 .At
@@ -1130,8 +1140,6 @@ login=\*(aq\eexec login\*(aq
 nameref=\*(aq\etypeset \-n\*(aq
 nohup=\*(aqnohup \*(aq
 r=\*(aq\ebuiltin fc \-e \-\*(aq
-source=\*(aqPATH=$PATH:. \ecommand .\*(aq
-stop=\*(aq\ekill \-STOP\*(aq
 type=\*(aq\ebuiltin whence \-v\*(aq
 .Ed
 .Pp
@@ -1288,6 +1296,8 @@ command which is run in a subshell.
 For
 .Pf $( Ns Ar command Ns \&)
 and
+.Pf ${\*(Ba\& Ns Ar command Ns \&;}
+and
 .Pf ${\ \& Ar command Ns \&;}
 substitutions, normal quoting rules are used when
 .Ar command
@@ -1300,9 +1310,11 @@ followed by any of
 .Ql \` ,
 or
 .Ql \e
-is stripped (a
+is stripped (as is
+.Ql \&"
+when the substitution is part of a double-quoted string); a backslash
 .Ql \e
-followed by any other character is unchanged).
+followed by any other character is unchanged.
 As a special case in command substitutions, a command of the form
 .Pf \*(Lt Ar file
 is interpreted to mean substitute the contents of
@@ -1627,31 +1639,40 @@ Cannot be applied to a vector.
 .Xc
 .It Xo
 .Pf ${ Ar name
+.Pf /# Ar pattern / Ar string No }
+.Xc
+.It Xo
+.Pf ${ Ar name
+.Pf /% Ar pattern / Ar string No }
+.Xc
+.It Xo
+.Pf ${ Ar name
 .Pf // Ar pattern / Ar string No }
 .Xc
 .Sm on
-Similar to ${..##..} substitution, but it replaces the longest match of
-.Ar pattern ,
-anchored anywhere in the value, with
-.Ar string .
-If
+The longest match of
 .Ar pattern
-begins with
-.Ql # ,
-it is anchored at the beginning of the value; if it begins with
-.Ql % ,
-it is anchored at the end.
-Empty patterns cause no replacement to happen.
-A single leading
-.Ql /
-or use of a pattern that matches the empty string causes the
-replacement to happen only once; two leading slashes cause
-all occurrences of matches in the value to be replaced.
-If the trailing
-.Pf / Ar string
-is omitted, any matches of
+in the value of parameter
+.Ar name
+is replaced with
+.Ar string
+(deleted if
+.Ar string
+is empty; the trailing slash
+.Pq Ql /
+may be omitted in that case).
+A leading slash followed by
+.Ql #
+or
+.Ql %
+causes the pattern to be anchored at the beginning or end of
+the value, respectively; empty unanchored
+.Ar pattern Ns s
+cause no replacement; a single leading slash or use of a
 .Ar pattern
-are replaced by the empty string, i.e. deleted.
+that matches the empty string causes the replacement to
+happen only once; two leading slashes cause all occurrences
+of matches in the value to be replaced.
 Cannot be applied to a vector.
 Inefficiently implemented, may be slow.
 .Pp
@@ -1737,7 +1758,7 @@ command below for a list of options).
 The exit status of the last non-asynchronous command executed.
 If the last command was killed by a signal,
 .Ic $?\&
-is set to 128 plus the signal number.
+is set to 128 plus the signal number, but at most 255.
 .It Ev 0
 The name of the shell, determined as follows:
 the first argument to
@@ -1925,7 +1946,7 @@ Time since the epoch, as returned by
 formatted as decimal
 .Va tv_sec
 followed by a dot
-.Pq Sq .\&
+.Pq Sq \&.
 and
 .Va tv_usec
 padded to exactly six decimal digits.
@@ -1946,8 +1967,8 @@ Assigning 1 to this parameter causes
 .Ic getopts
 to process arguments from the beginning the next time it is invoked.
 .It Ev PATH
-A colon separated list of directories that are searched when looking for
-commands and files sourced using the
+A colon (semicolon on OS/2) separated list of directories that are
+searched when looking for commands and files sourced using the
 .Sq \&.
 command (see below).
 An empty string resulting from a leading or trailing
@@ -2336,7 +2357,7 @@ input is initially set to be from
 .Pa /dev/null ,
 and commands for which any of the following redirections have been specified:
 .Bl -tag -width XXxxmarker
-.It \*(Gt Ar file
+.It \*(Gt Ns Ar file
 Standard output is redirected to
 .Ar file .
 If
@@ -2352,13 +2373,13 @@ for reading and then truncate it when it opens it for writing, before
 .Ar cmd
 gets a chance to actually read
 .Ar foo .
-.It \*(Gt\*(Ba Ar file
+.It \*(Gt\*(Ba Ns Ar file
 Same as
 .Ic \*(Gt ,
 except the file is truncated, even if the
 .Ic noclobber
 option is set.
-.It \*(Gt\*(Gt Ar file
+.It \*(Gt\*(Gt Ns Ar file
 Same as
 .Ic \*(Gt ,
 except if
@@ -2367,15 +2388,15 @@ exists it is appended to instead of being truncated.
 Also, the file is opened
 in append mode, so writes always go to the end of the file (see
 .Xr open 2 ) .
-.It \*(Lt Ar file
+.It \*(Lt Ns Ar file
 Standard input is redirected from
 .Ar file ,
 which is opened for reading.
-.It \*(Lt\*(Gt Ar file
+.It \*(Lt\*(Gt Ns Ar file
 Same as
 .Ic \*(Lt ,
 except the file is opened for reading and writing.
-.It \*(Lt\*(Lt Ar marker
+.It \*(Lt\*(Lt Ns Ar marker
 After reading the command line containing this kind of redirection (called a
 .Dq here document ) ,
 the shell copies lines from the command source into a temporary file until a
@@ -2415,11 +2436,11 @@ or double
 .Sq \&""
 quotes with nothing in between, the here document ends at the next empty line
 and substitution will not be performed.
-.It \*(Lt\*(Lt\- Ar marker
+.It \*(Lt\*(Lt\- Ns Ar marker
 Same as
 .Ic \*(Lt\*(Lt ,
 except leading tabs are stripped from lines in the here document.
-.It \*(Lt\*(Lt\*(Lt Ar word
+.It \*(Lt\*(Lt\*(Lt Ns Ar word
 Same as
 .Ic \*(Lt\*(Lt ,
 except that
@@ -2427,7 +2448,7 @@ except that
 .Em is
 the here document.
 This is called a here string.
-.It \*(Lt& Ar fd
+.It \*(Lt& Ns Ar fd
 Standard input is duplicated from file descriptor
 .Ar fd .
 .Ar fd
@@ -2441,42 +2462,35 @@ indicating standard input is to be closed.
 Note that
 .Ar fd
 is limited to a single digit in most shell implementations.
-.It \*(Gt& Ar fd
+.It \*(Gt& Ns Ar fd
 Same as
 .Ic \*(Lt& ,
 except the operation is done on standard output.
-.It &\*(Gt Ar file
+.It &\*(Gt Ns Ar file
 Same as
-.Ic \*(Gt Ar file 2\*(Gt&1 .
-This is a GNU
+.Ic \*(Gt Ns Ar file 2\*(Gt&1 .
+This is a deprecated (legacy) GNU
 .Nm bash
 extension supported by
 .Nm
 which also supports the preceding explicit fd number, for example,
-.Ic 3&\*(Gt Ar file
+.Ic 3&\*(Gt Ns Ar file
 is the same as
-.Ic 3\*(Gt Ar file 2\*(Gt&3
+.Ic 3\*(Gt Ns Ar file 2\*(Gt&3
 in
 .Nm
 but a syntax error in GNU
 .Nm bash .
-Setting the
-.Fl o Ar posix
-or
-.Fl o Ar sh
-shell options disable parsing of this redirection;
-it's a compatibility feature to legacy scripts, to
-not be used when writing new shell code.
 .It Xo
-.No &\*(Gt\*(Ba Ar file ,
-.No &\*(Gt\*(Gt Ar file ,
-.No &\*(Gt& Ar fd
+.No &\*(Gt\*(Ba Ns Ar file ,
+.No &\*(Gt\*(Gt Ns Ar file ,
+.No &\*(Gt& Ns Ar fd
 .Xc
 Same as
-.Ic \*(Gt\*(Ba Ar file ,
-.Ic \*(Gt\*(Gt Ar file ,
+.Ic \*(Gt\*(Ba Ns Ar file ,
+.Ic \*(Gt\*(Gt Ns Ar file ,
 or
-.Ic \*(Gt& Ar fd ,
+.Ic \*(Gt& Ns Ar fd ,
 followed by
 .Ic 2\*(Gt&1 ,
 as above.
@@ -2516,12 +2530,7 @@ will print an error with a line number prepended to it:
 .Pp
 .D1 $ cat /foo/bar 2\*(Gt&1 \*(Gt/dev/null \*(Ba pr \-n \-t
 .Pp
-File descriptors created by input/output redirections are private to the
-Korn shell, but passed to sub-processes if
-.Fl o Ic posix
-or
-.Fl o Ic sh
-is set.
+File descriptors created by I/O redirections are private to the shell.
 .Ss Arithmetic expressions
 Integer arithmetic expressions can be used with the
 .Ic let
@@ -2597,12 +2606,8 @@ in all forms of arithmetic expressions, except as numeric arguments to the
 built-in command.
 Prefixing numbers with a sole digit zero
 .Pq Sq 0
-leads to the shell interpreting it as base-8 (octal) integer in
-.Ic posix
-mode
-.Em only ;
-historically, (pd)ksh has never done so either anyway,
-and it's unsafe to do that, but POSIX demands it nowadays.
+does not cause interpretation as octal, as that's unsafe to do.
+.Pp
 As a special
 .Nm mksh
 extension, numbers to the base of one are treated as either (8-bit
@@ -2626,7 +2631,9 @@ octet not forming a valid and minimal CESU-8 sequence is passed, the
 behaviour is undefined (usually, the shell aborts with a parse error,
 but rarely, it succeeds, e.g. on the sequence C2 20).
 That's why you should always use ASCII mode unless you know that the
-input is well-formed UTF-8 in the range of 0000..FFFD.
+input is well-formed UTF-8 in the range of 0000..FFFD if you use this
+feature, as opposed to
+.Ic read Fl a .
 .Pp
 The operators are evaluated as follows:
 .Bl -tag -width Ds -offset indent
@@ -2956,23 +2963,24 @@ Additional
 .Nm
 commands keeping assignments:
 .Pp
-.Ic builtin , global , typeset , wait
+.Ic builtin , global , source , typeset ,
+.Ic wait
 .Pp
 Builtins that are not special:
 .Pp
 .Ic [ , alias , bg , bind ,
 .Ic cat , cd , command , echo ,
 .Ic false , fc , fg , getopts ,
-.Ic jobs , kill , let , mknod ,
-.Ic print , pwd , read , realpath ,
-.Ic rename , sleep , suspend , test ,
-.Ic true , ulimit , umask , unalias ,
-.Ic whence
+.Ic jobs , kill , let , print ,
+.Ic pwd , read , realpath , rename ,
+.Ic sleep , suspend , test , true ,
+.Ic ulimit , umask , unalias , whence
 .Pp
 Once the type of command has been determined, any command-line parameter
 assignments are performed and exported for the duration of the command.
 .Pp
-The following describes the special and regular built-in commands:
+The following describes the special and regular built-in commands and
+builtin-like reserved words:
 .Pp
 .Bl -tag -width false -compact
 .It Ic \&. Ar file Op Ar arg ...
@@ -3649,7 +3657,7 @@ the parsing or evaluation of an expression, the exit status is greater than 1.
 Since expressions may need to be quoted,
 .No \&(( Ar expr No ))
 is syntactic sugar for
-.No let \&" Ns Ar expr Ns \&" .
+.No "{ let '" Ns Ar expr Ns "'; }" .
 .Pp
 .It Ic let]
 Internally used alias for
@@ -3687,10 +3695,6 @@ option),
 and
 .Ar minor
 (minor device number).
-.Pp
-See
-.Xr mknod 8
-for further information.
 This is not normally part of
 .Nm mksh ;
 however, distributors may have added this as builtin as a speed hack.
@@ -3826,7 +3830,8 @@ Store the result without word splitting into the parameter
 .Ev REPLY )
 as array of characters (wide characters if the
 .Ic utf8\-mode
-option is enacted, octets otherwise).
+option is enacted, octets otherwise); the codepoints are
+encoded as decimal numbers by default.
 .It Fl d Ar x
 Use the first byte of
 .Ar x ,
@@ -3977,14 +3982,14 @@ becomes unusable, and directly calls
 .Pp
 .It Ic return Op Ar status
 Returns from a function or
-.Ic .\&
+.Ic \&.
 script, with exit status
 .Ar status .
 If no
 .Ar status
 is given, the exit status of the last executed command is used.
 If used outside of a function or
-.Ic .\&
+.Ic \&.
 script, it has the same effect as
 .Ic exit .
 Note that
@@ -3992,9 +3997,9 @@ Note that
 treats both profile and
 .Ev ENV
 files as
-.Ic .\&
+.Ic \&.
 scripts, while the original Korn shell only treats profiles as
-.Ic .\&
+.Ic \&.
 scripts.
 .Pp
 .It Xo
@@ -4072,7 +4077,7 @@ explicitly tested by a shell construct such as
 .Ic until ,
 .Ic while ,
 or
-.Ic !\&
+.Ic \&!
 statements.
 For
 .Ic &&
@@ -4149,6 +4154,12 @@ or
 case-insensitively; for direct builtin calls depending on the
 aforementioned environment variables; or for stdin or scripts,
 if the input begins with a UTF-8 Byte Order Mark.
+.Pp
+In near future, locale tracking will be implemented, which means that
+.Ic set Fl +U
+is changed whenever one of the
+.Tn POSIX
+locale-related environment variables changes.
 .It Fl u \*(Ba Fl o Ic nounset
 Referencing of an unset parameter, other than
 .Dq $@
@@ -4241,19 +4252,25 @@ commands above for more details.
 Make the exit status of a pipeline (before logically complementing) the
 rightmost non-zero errorlevel, or zero if all commands exited with zero.
 .It Fl o Ic posix
-Enable a somewhat more
-.Px
-ish mode.
+Behave closer to the standards
+(see
+.Sx POSIX mode
+for details).
+Automatically enabled if the basename of the shell invocation begins with
+.Dq sh
+and this autodetection feature is compiled in
+.Pq not in MirBSD .
 As a side effect, setting this flag turns off
 .Ic braceexpand
 mode, which can be turned back on manually, and
 .Ic sh
-mode.
+mode (unless both are enabled at the same time).
 .It Fl o Ic sh
 Enable
 .Pa /bin/sh
 .Pq kludge
-mode.
+mode (see
+.Sx SH mode ) .
 Automatically enabled if the basename of the shell invocation begins with
 .Dq sh
 and this autodetection feature is compiled in
@@ -4262,7 +4279,7 @@ As a side effect, setting this flag turns off
 .Ic braceexpand
 mode, which can be turned back on manually, and
 .Ic posix
-mode.
+mode (unless both are enabled at the same time).
 .It Fl o Ic vi
 Enable
 .Xr vi 1 Ns -like
@@ -4296,6 +4313,11 @@ options (with single letter names) can be found in the parameter
 with no option name will list all the options and whether each is on or off;
 .Ic set +o
 will print the long names of all options that are currently on.
+In a future version,
+.Ic set +o
+will behave
+.Tn POSIX
+compliant and print commands to restore the current options instead.
 .Pp
 Remaining arguments, if any, are positional parameters and are assigned, in
 order, to the positional parameters (i.e. $1, $2, etc.).
@@ -4332,16 +4354,9 @@ Signal delivery may continue execution earlier.
 Like
 .Ic \&. Po Do dot Dc Pc ,
 except that the current working directory is appended to the
-.Ev PATH
-in GNU
+search path (GNU
 .Nm bash
-and
-.Nm mksh .
-In
-.Nm ksh93
-and
-.Nm mksh ,
-this is implemented as a shell alias instead of a builtin.
+extension).
 .Pp
 .It Ic suspend
 Stops the shell as if it had received the suspend character from
@@ -5132,38 +5147,20 @@ If job monitoring is enabled, the completion status of jobs is printed
 .Op Fl pv
 .Op Ar name ...
 .Xc
-For each
-.Ar name ,
-the type of command is listed (reserved word, built-in, alias,
-function, tracked alias, or executable).
-If the
-.Fl p
-option is used, a path search is performed even if
-.Ar name
-is a reserved word, alias, etc.
 Without the
 .Fl v
-option,
-.Ic whence
-is similar to
-.Ic command Fl v
-except that
-.Ic whence
-will find reserved words and won't print aliases as alias commands.
+option, it is the same as
+.Ic command Fl v ,
+except aliases are not printed as alias command.
 With the
 .Fl v
-option,
-.Ic whence
-is the same as
+option, it is exactly the same as
 .Ic command Fl V .
-Note that for
-.Ic whence ,
-the
+In either case, the
 .Fl p
-option does not affect the search path used, as it does for
-.Ic command .
-If the type of one or more of the names could not be determined, the exit
-status is non-zero.
+option differs: the search path is not affected in
+.Ic whence ,
+but the search is restricted to the path.
 .El
 .Ss Job control
 Job control refers to the shell's ability to monitor and control jobs which
@@ -5301,6 +5298,69 @@ If another attempt
 is immediately made to exit the shell, the running jobs are sent a
 .Dv SIGHUP
 signal and the shell exits.
+.Ss POSIX mode
+Entering
+.Ic set Fl o Ic posix
+mode will cause
+.Nm
+to behave even more
+.Tn POSIX
+compliant in places where the defaults or opinions differ.
+Note that
+.Nm mksh
+will still operate with unsigned 32-bit arithmetics; use
+.Nm lksh
+if arithmetics on the host
+.Vt long
+data type, complete with ISO C Undefined Behaviour, are required;
+refer to the
+.Xr lksh 1
+manual page for details.
+Most other historic,
+.At
+.Nm ksh Ns -compatible ,
+or opinionated differences can be disabled by using this mode; these are:
+.Bl -bullet
+.It
+The GNU
+.Nm bash
+I/O redirection
+.Ic &\*(Gt Ns Ar file
+is no longer supported.
+.It
+File descriptors created by I/O redirections are inherited by
+child processes.
+.It
+Numbers with a leading digit zero are interpreted as octal.
+.It
+The
+.Nm echo
+builtin does not interpret backslashes and only supports the exact option
+.Dq Fl n .
+.It
+\&... (list is incomplete and may change for R53)
+.El
+.Ss SH mode
+Compatibility mode; intended for use with legacy scripts that
+cannot easily be fixed; the changes are as follows:
+.Bl -bullet
+.It
+The GNU
+.Nm bash
+I/O redirection
+.Ic &\*(Gt Ns Ar file
+is no longer supported.
+.It
+File descriptors created by I/O redirections are inherited by
+child processes.
+.It
+The
+.Nm echo
+builtin does not interpret backslashes and only supports the exact option
+.Dq Fl n .
+.It
+\&... (list is incomplete and may change for R53)
+.El
 .Ss Interactive input line editing
 The shell supports three modes of reading command lines from a
 .Xr tty 4
@@ -6303,6 +6363,7 @@ contains the system and suid profile.
 .Xr cat 1 ,
 .Xr ed 1 ,
 .Xr getopt 1 ,
+.Xr lksh 1 ,
 .Xr sed 1 ,
 .Xr sh 1 ,
 .Xr stty 1 ,
@@ -6327,8 +6388,6 @@ contains the system and suid profile.
 .Xr script 7 ,
 .Xr utf\-8 7 ,
 .Xr mknod 8
-.Pp
-.Pa http://docsrv.sco.com:507/en/man/html.C/sh.C.html
 .Pp
 .Pa https://www.mirbsd.org/ksh\-chan.htm
 .Rs
@@ -6396,8 +6455,8 @@ contains the system and suid profile.
 .An -nosplit
 .Nm "The MirBSD Korn Shell"
 is developed by
-.An Thorsten Glaser Aq tg@mirbsd.org
-and currently maintained as part of The MirOS Project.
+.An mirabilos Aq Mt m@mirbsd.org
+as part of The MirOS Project.
 This shell is based on the public domain 7th edition Bourne shell clone by
 .An Charles Forsyth ,
 who kindly agreed to, in countries where the Public Domain status of the work
@@ -6416,10 +6475,10 @@ The first release of
 was created by
 .An Eric Gisin ,
 and it was subsequently maintained by
-.An John R. MacMillan Aq Mt change!john@sq.sq.com ,
-.An Simon J. Gerraty Aq Mt sjg@zen.void.oz.au ,
+.An John R. MacMillan ,
+.An Simon J. Gerraty ,
 and
-.An Michael Rendell Aq Mt michael@cs.mun.ca .
+.An Michael Rendell .
 The effort of several projects, such as Debian and OpenBSD, and other
 contributors including our users, to improve the shell is appreciated.
 See the documentation, CVS, and web site for details.
@@ -6429,10 +6488,11 @@ The complete legalese is at:
 .Pa https://www.mirbsd.org/TaC\-mksh.txt
 .\"
 .\" This boils down to: feel free to use mksh.ico as application icon
-.\" or shortcut for mksh or mksh/Win32; distro patches are ok (but we
-.\" request they amend $KSH_VERSION when modifying mksh). Authors are
-.\" Marshall Kirk McKusick (UCB), Rick Collette (ekkoBSD), Thorsten
-.\" Glaser, Benny Siegert (MirBSD), Michael Langguth (mksh/Win32).
+.\" or shortcut for mksh or mksh/Win32 or OS/2; distro patches are ok
+.\" (but we request they amend $KSH_VERSION when modifying mksh).
+.\" Authors are Marshall Kirk McKusick (UCB), Rick Collette (ekkoBSD),
+.\" mirabilos, Benny Siegert (MirBSD), Michael Langguth (mksh/Win32),
+.\" KO Myung-Hun (mksh for OS/2).
 .\"
 .\" As far as MirBSD is concerned, the files themselves are free
 .\" to modification and distribution under BSD/MirOS Licence, the
@@ -6461,23 +6521,16 @@ foo \*(Ba bar \*(Ba& read \-p baz        # will, however, do so
 .Nm mksh
 provides a consistent set of 32-bit integer arithmetics, both signed
 and unsigned, with defined wraparound and sign of the result of a
-remainder operation, even (defying POSIX) on 64-bit systems.
-If you require 64-bit integer arithmetics, use
-.Nm lksh Pq legacy mksh
-instead, but be aware that, in POSIX, it's legal for the OS to make
-.Li print $((2147483647 + 1))
-delete all files on your system, as it's Undefined Behaviour.
+remainder operation, even (defying POSIX) on 36-bit and 64-bit systems.
 .Pp
 .Nm mksh
 provides a consistent, clear interface normally.
-This may deviate from POSIX in optional or opinionated places, such
-as whether leading-digit-zero numbers should be interpreted as octal.
+This may deviate from POSIX in historic or opinionated places.
 .Ic set Fl o Ic posix
-will cause the shell (either
-.Nm mksh
-or
-.Nm lksh )
-to behave more like the standard expects.
+(see
+.Sx POSIX mode
+for details)
+will cause the shell to behave more conformant.
 .Pp
 For the purpose of
 .Tn POSIX ,
@@ -6508,6 +6561,7 @@ case ${KSH_VERSION:\-} in
 	esac ;;
 esac
 .Ed
+In near future, (Unicode) locale tracking will be implemented though.
 .Sh BUGS
 Suspending (using \*(haZ) pipelines like the one below will only suspend
 the currently running part of the pipeline; in this example,
@@ -6531,7 +6585,7 @@ for the in-memory portion of the history is slow, should use
 .Xr memmove 3 .
 .Pp
 This document attempts to describe
-.Nm mksh\ R51
+.Nm mksh\ R52c
 and up,
 .\" with vendor patches from insert-your-name-here,
 compiled without any options impacting functionality, such as
@@ -6550,7 +6604,7 @@ Please report bugs in
 to the
 .Mx
 mailing list at
-.Aq miros\-mksh@mirbsd.org
+.Aq Mt miros\-mksh@mirbsd.org
 or in the
 .Li \&#\&!/bin/mksh
 .Pq or Li \&#ksh

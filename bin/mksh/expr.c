@@ -2,8 +2,8 @@
 
 /*-
  * Copyright (c) 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
- *		 2011, 2012, 2013, 2014
- *	Thorsten Glaser <tg@mirbsd.org>
+ *		 2011, 2012, 2013, 2014, 2016
+ *	mirabilos <m@mirbsd.org>
  *
  * Provided that these terms and disclaimer and all copyright notices
  * are retained or reproduced in an accompanying document, permission
@@ -23,7 +23,7 @@
 
 #include "sh.h"
 
-__RCSID("$MirOS: src/bin/mksh/expr.c,v 1.77 2014/12/15 23:26:36 tg Exp $");
+__RCSID("$MirOS: src/bin/mksh/expr.c,v 1.83 2016/03/01 18:29:38 tg Exp $");
 
 /* the order of these enums is constrained by the order of opinfo[] */
 enum token {
@@ -227,7 +227,7 @@ v_evaluate(struct tbl *vp, const char *expr, volatile int error_ok,
 	exprtoken(es);
 	if (es->tok == END) {
 		es->tok = LIT;
-		es->val = tempvar();
+		es->val = tempvar("");
 	}
 	v = intvar(es, evalexpr(es, MAX_PREC));
 
@@ -649,7 +649,7 @@ exprtoken(Expr_state *es)
 			cp += len;
 		}
 		if (es->noassign) {
-			es->val = tempvar();
+			es->val = tempvar("");
 			es->val->flag |= EXPRLVALUE;
 		} else {
 			strndupx(tvar, es->tokp, cp - es->tokp, ATEMP);
@@ -659,12 +659,16 @@ exprtoken(Expr_state *es)
 		es->tok = VAR;
 	} else if (c == '1' && cp[1] == '#') {
 		cp += 2;
-		cp += utf_ptradj(cp);
+		if (*cp)
+			cp += utf_ptradj(cp);
 		strndupx(tvar, es->tokp, cp - es->tokp, ATEMP);
 		goto process_tvar;
 #ifndef MKSH_SMALL
 	} else if (c == '\'') {
-		++cp;
+		if (*++cp == '\0') {
+			es->tok = END;
+			evalerr(es, ET_UNEXPECTED, NULL);
+		}
 		cp += utf_ptradj(cp);
 		if (*cp++ != '\'')
 			evalerr(es, ET_STR,
@@ -683,7 +687,7 @@ exprtoken(Expr_state *es)
 			c = *cp++;
 		strndupx(tvar, es->tokp, --cp - es->tokp, ATEMP);
  process_tvar:
-		es->val = tempvar();
+		es->val = tempvar("");
 		es->val->flag &= ~INTEGER;
 		es->val->type = 0;
 		es->val->val.s = tvar;
@@ -718,17 +722,19 @@ assign_check(Expr_state *es, enum token op, struct tbl *vasn)
 }
 
 struct tbl *
-tempvar(void)
+tempvar(const char *vname)
 {
 	struct tbl *vp;
+	size_t vsize;
 
-	vp = alloc(sizeof(struct tbl), ATEMP);
+	vsize = strlen(vname) + 1;
+	vp = alloc(offsetof(struct tbl, name[0]) + vsize, ATEMP);
+	memcpy(vp->name, vname, vsize);
 	vp->flag = ISSET|INTEGER;
 	vp->type = 0;
 	vp->areap = ATEMP;
 	vp->ua.hval = 0;
 	vp->val.i = 0;
-	vp->name[0] = '\0';
 	return (vp);
 }
 
@@ -743,7 +749,7 @@ intvar(Expr_state *es, struct tbl *vp)
 	    (vp->flag & (ISSET|INTEGER|EXPRLVALUE)) == (ISSET|INTEGER))
 		return (vp);
 
-	vq = tempvar();
+	vq = tempvar("");
 	if (setint_v(vq, vp, es->arith) == NULL) {
 		if (vp->flag & EXPRINEVAL)
 			evalerr(es, ET_RECURSIVE, vp->name);
@@ -916,6 +922,7 @@ ksh_access(const char *fn, int mode)
 	return (rv);
 }
 
+#ifndef MIRBSD_BOOTFLOPPY
 /* From: X11/xc/programs/xterm/wcwidth.c,v 1.8 2014/06/24 19:53:53 tg Exp $ */
 
 struct mb_ucsrange {
@@ -1195,3 +1202,4 @@ utf_wcwidth(unsigned int wc)
 		return (2);
 	return (1);
 }
+#endif

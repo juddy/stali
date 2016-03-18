@@ -1,9 +1,9 @@
 #!/bin/sh
-srcversion='$MirOS: src/bin/mksh/Build.sh,v 1.689 2015/07/10 17:16:23 tg Exp $'
+srcversion='$MirOS: src/bin/mksh/Build.sh,v 1.697 2016/03/04 18:28:39 tg Exp $'
 #-
 # Copyright (c) 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
-#		2011, 2012, 2013, 2014, 2015
-#	Thorsten “mirabilos” Glaser <tg@mirbsd.org>
+#		2011, 2012, 2013, 2014, 2015, 2016
+#	mirabilos <m@mirbsd.org>
 #
 # Provided that these terms and disclaimer and all copyright notices
 # are retained or reproduced in an accompanying document, permission
@@ -100,6 +100,7 @@ do_genopt() {
 	srcfile=$1
 	test -f "$srcfile" || genopt_die Source file \$srcfile not set.
 	bn=`basename "$srcfile" | sed 's/.opt$//'`
+	o_hdr='/* +++ GENERATED FILE +++ DO NOT EDIT +++ */'
 	o_gen=
 	o_str=
 	o_sym=
@@ -128,6 +129,9 @@ do_genopt() {
 			;;
 		*:@@*)
 			genopt_die ;;
+		0:/\*-|0:\ \**|0:)
+			o_hdr=$o_hdr$nl$line
+			;;
 		0:@*|1:@*)
 			# begin of a definition block
 			sym=`echo "$line" | sed 's/^@//'`
@@ -177,6 +181,7 @@ do_genopt() {
 		echo "\"$opts\""
 		test -n "$cond" && echo "#endif"
 	done | {
+		echo "$o_hdr"
 		echo "#ifndef $o_sym$o_gen"
 		echo "#else"
 		cat
@@ -740,6 +745,7 @@ GNU)
 	*tendracc*) ;;
 	*) add_cppflags -D_GNU_SOURCE ;;
 	esac
+	add_cppflags -DSETUID_CAN_FAIL_WITH_EAGAIN
 	# define MKSH__NO_PATH_MAX to use Hurd-only functions
 	add_cppflags -DMKSH__NO_PATH_MAX
 	;;
@@ -748,6 +754,7 @@ GNU/kFreeBSD)
 	*tendracc*) ;;
 	*) add_cppflags -D_GNU_SOURCE ;;
 	esac
+	add_cppflags -DSETUID_CAN_FAIL_WITH_EAGAIN
 	;;
 Haiku)
 	add_cppflags -DMKSH_ASSUME_UTF8; HAVE_ISSET_MKSH_ASSUME_UTF8=1
@@ -1195,7 +1202,7 @@ tcc)
 	;;
 tendra)
 	vv '|' "$CC $CFLAGS $CPPFLAGS $LDFLAGS $NOWARN $LIBS -V 2>&1 | \
-	    fgrep -i -e version -e release"
+	    grep -F -i -e version -e release"
 	;;
 ucode)
 	vv '|' "$CC $CFLAGS $CPPFLAGS $LDFLAGS $NOWARN $LIBS -V"
@@ -1232,19 +1239,20 @@ dragonegg|llvm)
 	vv '|' "llc -version"
 	;;
 esac
+etd=" on $et"
 case $et in
 klibc)
 	add_cppflags -DMKSH_NO_LIMITS
 	;;
 unknown)
 	# nothing special detected, don’t worry
-	unset et
+	etd=
 	;;
 *)
 	# huh?
 	;;
 esac
-$e "$bi==> which compiler seems to be used...$ao $ui$ct${et+ on $et}$ao"
+$e "$bi==> which compiler seems to be used...$ao $ui$ct$etd$ao"
 rmf conftest.c conftest.o conftest a.out* a.exe* conftest.exe* vv.out
 
 #
@@ -1918,11 +1926,6 @@ ac_test gettimeofday <<-'EOF'
 	int main(void) { struct timeval tv; return (gettimeofday(&tv, NULL)); }
 EOF
 
-ac_test issetugid <<-'EOF'
-	#include <unistd.h>
-	int main(void) { return (issetugid()); }
-EOF
-
 ac_test killpg <<-'EOF'
 	#include <signal.h>
 	int main(int ac, char *av[]) { return (av[0][killpg(123, ac)]); }
@@ -2342,7 +2345,7 @@ addsrcs '!' HAVE_STRLCPY strlcpy.c
 addsrcs USE_PRINTF_BUILTIN printf.c
 test 1 = "$USE_PRINTF_BUILTIN" && add_cppflags -DMKSH_PRINTF_BUILTIN
 test 1 = "$HAVE_CAN_VERB" && CFLAGS="$CFLAGS -verbose"
-add_cppflags -DMKSH_BUILD_R=511
+add_cppflags -DMKSH_BUILD_R=523
 
 $e $bi$me: Finished configuration testing, now producing output.$ao
 
@@ -2414,7 +2417,7 @@ cat >test.sh <<-EOF
 		args[\${#args[*]}]=\$TMPDIR
 	fi
 	print Testing mksh for conformance:
-	fgrep -e MirOS: -e MIRBSD "\$sflag"
+	grep -F -e Mir''OS: -e MIRBSD "\$sflag"
 	print "This shell is actually:\\n\\t\$KSH_VERSION"
 	print 'test.sh built for mksh $dstversion'
 	cstr='\$os = defined \$^O ? \$^O : "unknown";'
