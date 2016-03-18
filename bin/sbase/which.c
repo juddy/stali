@@ -9,7 +9,6 @@
 #include <string.h>
 #include <unistd.h>
 
-#include "arg.h"
 #include "util.h"
 
 static int aflag;
@@ -69,7 +68,7 @@ main(int argc, char *argv[])
 		break;
 	default:
 		usage();
-	} ARGEND;
+	} ARGEND
 
 	if (!argc)
 		usage();

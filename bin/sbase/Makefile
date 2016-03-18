@@ -11,8 +11,12 @@ HDR =\
 	md5.h\
 	queue.h\
 	sha1.h\
+	sha224.h\
 	sha256.h\
+	sha384.h\
 	sha512.h\
+	sha512-224.h\
+	sha512-256.h\
 	text.h\
 	utf.h\
 	util.h
@@ -53,16 +57,23 @@ LIBUTILSRC =\
 	libutil/fshut.c\
 	libutil/getlines.c\
 	libutil/human.c\
+	libutil/linecmp.c\
 	libutil/md5.c\
+	libutil/memmem.c\
 	libutil/mkdirp.c\
 	libutil/mode.c\
+	libutil/parseoffset.c\
 	libutil/putword.c\
 	libutil/reallocarray.c\
 	libutil/recurse.c\
 	libutil/rm.c\
 	libutil/sha1.c\
+	libutil/sha224.c\
 	libutil/sha256.c\
+	libutil/sha384.c\
 	libutil/sha512.c\
+	libutil/sha512-224.c\
+	libutil/sha512-256.c\
 	libutil/strcasestr.c\
 	libutil/strlcat.c\
 	libutil/strlcpy.c\
@@ -91,12 +102,15 @@ BIN =\
 	dirname\
 	du\
 	echo\
+	ed\
 	env\
 	expand\
 	expr\
 	false\
 	find\
+	flock\
 	fold\
+	getconf\
 	grep\
 	head\
 	join\
@@ -115,6 +129,8 @@ BIN =\
 	nice\
 	nl\
 	nohup\
+	od\
+	pathchk\
 	paste\
 	printenv\
 	printf\
@@ -127,8 +143,12 @@ BIN =\
 	seq\
 	setsid\
 	sha1sum\
+	sha224sum\
 	sha256sum\
+	sha384sum\
 	sha512sum\
+	sha512-224sum\
+	sha512-256sum\
 	sleep\
 	sort\
 	split\
@@ -139,10 +159,12 @@ BIN =\
 	tar\
 	tee\
 	test\
+	tftp\
 	time\
 	touch\
 	tr\
 	true\
+	tsort\
 	tty\
 	uname\
 	unexpand\
@@ -152,7 +174,9 @@ BIN =\
 	uuencode\
 	wc\
 	which\
+	whoami\
 	xargs\
+	xinstall\
 	yes
 
 LIBUTFOBJ = $(LIBUTFSRC:.c=.o)
@@ -168,7 +192,7 @@ $(BIN): $(LIB) $(@:=.o)
 $(OBJ): $(HDR) config.mk
 
 .o:
-	$(LD) $(LDFLAGS) -o $@ $< $(LIB)
+	$(CC) $(LDFLAGS) -o $@ $< $(LIB)
 
 .c.o:
 	$(CC) $(CFLAGS) $(CPPFLAGS) -o $@ -c $<
@@ -181,16 +205,23 @@ $(LIBUTIL): $(LIBUTILOBJ)
 	$(AR) rc $@ $?
 	$(RANLIB) $@
 
+getconf.c: confstr_l.h limits_l.h sysconf_l.h pathconf_l.h
+
+confstr_l.h limits_l.h sysconf_l.h pathconf_l.h: getconf.sh
+	./getconf.sh
+
 install: all
 	mkdir -p $(DESTDIR)$(PREFIX)/bin
 	cp -f $(BIN) $(DESTDIR)$(PREFIX)/bin
 	cd $(DESTDIR)$(PREFIX)/bin && ln -f test [ && chmod 755 $(BIN)
+	mv -f $(DESTDIR)$(PREFIX)/bin/xinstall $(DESTDIR)$(PREFIX)/bin/install
 	mkdir -p $(DESTDIR)$(MANPREFIX)/man1
 	for m in $(MAN); do sed "s/^\.Os sbase/.Os sbase $(VERSION)/g" < "$$m" > $(DESTDIR)$(MANPREFIX)/man1/"$$m"; done
 	cd $(DESTDIR)$(MANPREFIX)/man1 && chmod 644 $(MAN)
+	mv -f $(DESTDIR)$(MANPREFIX)/man1/xinstall.1 $(DESTDIR)$(MANPREFIX)/man1/install.1
 
 uninstall:
-	cd $(DESTDIR)$(PREFIX)/bin && rm -f $(BIN)
+	cd $(DESTDIR)$(PREFIX)/bin && rm -f $(BIN) [ install
 	cd $(DESTDIR)$(MANPREFIX)/man1 && rm -f $(MAN)
 
 dist: clean
@@ -203,21 +234,23 @@ dist: clean
 sbase-box: $(LIB) $(SRC)
 	mkdir -p build
 	cp $(HDR) build
-	for f in $(SRC); do sed "s/^main(/$${f%.c}_&/" < $$f > build/$$f; done
-	echo '#include <libgen.h>'                                                                            > build/$@.c
-	echo '#include <stdio.h>'                                                                            >> build/$@.c
-	echo '#include <stdlib.h>'                                                                           >> build/$@.c
-	echo '#include <string.h>'                                                                           >> build/$@.c
-	echo '#include "util.h"'                                                                             >> build/$@.c
-	for f in $(SRC); do echo "int $${f%.c}_main(int, char **);"; done                                    >> build/$@.c
-	echo 'int main(int argc, char *argv[]) { char *s = basename(argv[0]);'                               >> build/$@.c
-	echo 'if(!strcmp(s,"sbase-box")) { argc--; argv++; s = basename(argv[0]); } if(0) ;'                 >> build/$@.c
-	echo "else if (!strcmp(s, \"[\")) return test_main(argc, argv);"                                     >> build/$@.c
-	for f in $(SRC); do echo "else if(!strcmp(s, \"$${f%.c}\")) return $${f%.c}_main(argc, argv);"; done >> build/$@.c
-	echo 'else { fputs("[ ", stdout);'                                                                   >> build/$@.c
-	for f in $(SRC); do echo "fputs(\"$${f%.c} \", stdout);"; done                                       >> build/$@.c
-	echo 'putchar(0xa); }; return 0; }'                                                                  >> build/$@.c
-	$(LD) $(CFLAGS) $(CPPFLAGS) $(LDFLAGS) -o $@ build/*.c $(LIB)
+	cp confstr_l.h limits_l.h sysconf_l.h pathconf_l.h build
+	for f in $(SRC); do sed "s/^main(/$$(echo "$${f%.c}" | sed s/-/_/g)_&/" < $$f > build/$$f; done
+	echo '#include <libgen.h>'                                                                                                     > build/$@.c
+	echo '#include <stdio.h>'                                                                                                     >> build/$@.c
+	echo '#include <stdlib.h>'                                                                                                    >> build/$@.c
+	echo '#include <string.h>'                                                                                                    >> build/$@.c
+	echo '#include "util.h"'                                                                                                      >> build/$@.c
+	for f in $(SRC); do echo "int $$(echo "$${f%.c}" | sed s/-/_/g)_main(int, char **);"; done                                    >> build/$@.c
+	echo 'int main(int argc, char *argv[]) { char *s = basename(argv[0]);'                                                        >> build/$@.c
+	echo 'if(!strcmp(s,"sbase-box")) { argc--; argv++; s = basename(argv[0]); } if(0) ;'                                          >> build/$@.c
+	echo "else if (!strcmp(s, \"install\")) return xinstall_main(argc, argv);"                                                    >> build/$@.c
+	echo "else if (!strcmp(s, \"[\")) return test_main(argc, argv);"                                                              >> build/$@.c
+	for f in $(SRC); do echo "else if(!strcmp(s, \"$${f%.c}\")) return $$(echo "$${f%.c}" | sed s/-/_/g)_main(argc, argv);"; done >> build/$@.c
+	echo 'else { fputs("[ ", stdout);'                                                                                            >> build/$@.c
+	for f in $(SRC); do echo "fputs(\"$${f%.c} \", stdout);"; done                                                                >> build/$@.c
+	echo 'putchar(0xa); }; return 0; }'                                                                                           >> build/$@.c
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(LDFLAGS) -o $@ build/*.c $(LIB)
 	rm -r build
 
 sbase-box-install: sbase-box
@@ -226,12 +259,18 @@ sbase-box-install: sbase-box
 	chmod 755 $(DESTDIR)$(PREFIX)/bin/sbase-box
 	for f in $(BIN); do ln -sf sbase-box $(DESTDIR)$(PREFIX)/bin/"$$f"; done
 	ln -sf sbase-box $(DESTDIR)$(PREFIX)/bin/[
+	mv -f $(DESTDIR)$(PREFIX)/bin/xinstall $(DESTDIR)$(PREFIX)/bin/install
 	mkdir -p $(DESTDIR)$(MANPREFIX)/man1
 	for m in $(MAN); do sed "s/^\.Os sbase/.Os sbase $(VERSION)/g" < "$$m" > $(DESTDIR)$(MANPREFIX)/man1/"$$m"; done
 	cd $(DESTDIR)$(MANPREFIX)/man1 && chmod 644 $(MAN)
+	mv -f $(DESTDIR)$(MANPREFIX)/man1/xinstall.1 $(DESTDIR)$(MANPREFIX)/man1/install.1
+
+sbase-box-uninstall: uninstall
+	cd $(DESTDIR)$(PREFIX)/bin && rm -f sbase-box
 
 clean:
 	rm -f $(BIN) $(OBJ) $(LIB) sbase-box sbase-$(VERSION).tar.gz
+	rm -f confstr_l.h limits_l.h sysconf_l.h pathconf_l.h
 
 .PHONY:
-	all install uninstall dist sbase-box sbase-box-install clean
+	all install uninstall dist sbase-box sbase-box-install sbase-box-uninstall clean

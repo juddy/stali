@@ -87,7 +87,7 @@ main(int argc, char *argv[])
 {
 	struct fdescr *dsc;
 	Rune *delim;
-	size_t i, len;
+	size_t delimlen, i;
 	int seq = 0, ret = 0;
 	char *adelim = "\t";
 
@@ -100,16 +100,16 @@ main(int argc, char *argv[])
 		break;
 	default:
 		usage();
-	} ARGEND;
+	} ARGEND
 
 	if (!argc)
 		usage();
 
 	/* populate delimiters */
+	/* TODO: fix libutf to accept sizes */
 	unescape(adelim);
 	delim = ereallocarray(NULL, utflen(adelim) + 1, sizeof(*delim));
-	len = utftorunestr(adelim, delim);
-	if (!len)
+	if (!(delimlen = utftorunestr(adelim, delim)))
 		usage();
 
 	/* populate file list */
@@ -126,9 +126,9 @@ main(int argc, char *argv[])
 	}
 
 	if (seq) {
-		sequential(dsc, argc, delim, len);
+		sequential(dsc, argc, delim, delimlen);
 	} else {
-		parallel(dsc, argc, delim, len);
+		parallel(dsc, argc, delim, delimlen);
 	}
 
 	for (i = 0; i < argc; i++)

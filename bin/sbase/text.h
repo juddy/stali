@@ -1,7 +1,12 @@
 /* See LICENSE file for copyright and license details. */
 
+struct line {
+	char *data;
+	size_t len;
+};
+
 struct linebuf {
-	char **lines;
+	struct line *lines;
 	size_t nlines;
 	size_t capacity;
 };
@@ -9,3 +14,4 @@ struct linebuf {
 void getlines(FILE *, struct linebuf *);
 
 void concat(FILE *, const char *, FILE *, const char *);
+int linecmp(struct line *, struct line *);

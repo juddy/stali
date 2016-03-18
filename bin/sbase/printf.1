@@ -1,4 +1,4 @@
-.Dd March 27, 2015
+.Dd 2015-10-08
 .Dt PRINTF 1
 .Os sbase
 .Sh NAME
@@ -18,7 +18,7 @@ until drained.
 .Pp
 .Nm
 interprets the standard escape sequences \e\e, \e', \e", \ea, \eb, \ee,
-\ef, \en, \er, \et, \ev, \exH[H], \eO[OO], the sequence \ec, which
+\ef, \en, \er, \et, \ev, \exH[H], \eO[OOO], the sequence \ec, which
 terminates further output if it's found inside
 .Ar format
 or a %b format string, the format specification %b for an unescaped string and all C
@@ -29,5 +29,6 @@ The
 .Nm
 utility is compliant with the
 .St -p1003.1-2013
-specification except from the octal-escape format in %b format strings, which has been changed
-from \e0[ooo] to \eo[oo] for consistency reasons.
+specification.
+.Pp
+The possibility of specifying 4-digit octals is an extension to that specification.

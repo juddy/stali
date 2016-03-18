@@ -14,7 +14,7 @@ head(FILE *fp, const char *fname, size_t n)
 	ssize_t len;
 
 	while (i < n && (len = getline(&buf, &size, fp)) > 0) {
-		fputs(buf, stdout);
+		fwrite(buf, 1, len, stdout);
 		i += (len && (buf[len - 1] == '\n'));
 	}
 	free(buf);
@@ -44,7 +44,7 @@ main(int argc, char *argv[])
 		break;
 	default:
 		usage();
-	} ARGEND;
+	} ARGEND
 
 	if (!argc) {
 		head(stdin, "<stdin>", n);

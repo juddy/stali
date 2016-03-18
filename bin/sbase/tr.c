@@ -189,7 +189,7 @@ main(int argc, char *argv[])
 		break;
 	default:
 		usage();
-	} ARGEND;
+	} ARGEND
 
 	if (!argc || argc > 2 || (argc == 1 && dflag == sflag))
 		usage();
@@ -218,12 +218,6 @@ read:
 				else
 					goto write;
 			}
-			if (sflag) {
-				if (r == lastrune)
-					goto read;
-				else
-					goto write;
-			}
 			if (cflag)
 				goto write;
 			for (m = 0; m < i; m++)
@@ -243,6 +237,8 @@ read:
 			m--;
 			r = set2[m].start + (off1 - off2) / set2[m].quant;
 
+			if (sflag && (r == lastrune))
+				goto read;
 			goto write;
 		}
 	}

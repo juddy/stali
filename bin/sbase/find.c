@@ -992,7 +992,7 @@ find(char *path, struct findhist *hist)
 static void
 usage(void)
 {
-	eprintf("usage: %s [-H|-L] path... [expression...]\n", argv0);
+	eprintf("usage: %s [-H | -L] path ... [expression ...]\n", argv0);
 }
 
 int
@@ -1006,7 +1006,7 @@ main(int argc, char **argv)
 	case 'H': gflags.l = !(gflags.h = 1); break;
 	case 'L': gflags.h = !(gflags.l = 1); break;
 	default : usage();
-	} ARGEND;
+	} ARGEND
 
 	paths = argv;
 

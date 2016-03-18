@@ -72,8 +72,8 @@ format:
 static void
 usage(void)
 {
-	eprintf("usage: %s [-f fmt] [-s sep] [-w] [startnum"
-		       " [step]] endnum\n", argv0);
+	eprintf("usage: %s [-f fmt] [-s sep] [-w] "
+	        "[startnum [step]] endnum\n", argv0);
 }
 
 int
@@ -98,7 +98,7 @@ main(int argc, char *argv[])
 		break;
 	default:
 		usage();
-	} ARGEND;
+	} ARGEND
 
 	switch (argc) {
 	case 3:

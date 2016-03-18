@@ -50,7 +50,7 @@ addpattern(const char *pattern, size_t patlen)
 	/* a null BRE/ERE matches every line */
 	if (!Fflag)
 		if (pattern[0] == '\0')
-			pattern = ".";
+			pattern = "^";
 
 	if (!Fflag && xflag) {
 		tmp = enmalloc(Error, patlen + 3);
@@ -115,7 +115,7 @@ grep(FILE *fp, const char *str)
 			buf[len - 1] = '\0';
 		SLIST_FOREACH(pnode, &phead, entry) {
 			if (!Fflag) {
-				if (regexec(&pnode->preg, buf[0] == '\0' ? "\n" : buf, 0, NULL, 0) ^ vflag)
+				if (regexec(&pnode->preg, buf, 0, NULL, 0) ^ vflag)
 					continue;
 			} else {
 				if (!xflag) {
@@ -166,7 +166,8 @@ end:
 static void
 usage(void)
 {
-	enprintf(Error, "usage: %s [-EFHchilnqsvwx] [-e pattern] [-f file] [pattern] [file ...]\n", argv0);
+	enprintf(Error, "usage: %s [-EFHchilnqsvwx] [-e pattern] [-f file] "
+	         "[pattern] [file ...]\n", argv0);
 }
 
 int
@@ -182,10 +183,13 @@ main(int argc, char *argv[])
 	ARGBEGIN {
 	case 'E':
 		Eflag = 1;
+		Fflag = 0;
 		flags |= REG_EXTENDED;
 		break;
 	case 'F':
 		Fflag = 1;
+		Eflag = 0;
+		flags &= ~REG_EXTENDED;
 		break;
 	case 'H':
 		Hflag = 1;
@@ -236,7 +240,7 @@ main(int argc, char *argv[])
 		break;
 	default:
 		usage();
-	} ARGEND;
+	} ARGEND
 
 	if (argc == 0 && !eflag && !fflag)
 		usage(); /* no pattern */

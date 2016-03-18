@@ -3,12 +3,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "text.h"
 #include "util.h"
 
 static int show = 0x07;
 
 static void
-printline(int pos, char *line)
+printline(int pos, struct line *line)
 {
 	int i;
 
@@ -19,7 +20,7 @@ printline(int pos, char *line)
 		if (show & (0x1 << i))
 			putchar('\t');
 	}
-	fputs(line, stdout);
+	fwrite(line->data, 1, line->len, stdout);
 }
 
 static void
@@ -32,9 +33,10 @@ int
 main(int argc, char *argv[])
 {
 	FILE *fp[2];
-	size_t linelen[2] = { 0, 0 };
-	int ret = 0, i, diff = 0;
-	char *line[2] = { NULL, NULL };
+	static struct line line[2];
+	size_t linecap[2] = { 0, 0 };
+	ssize_t len;
+	int ret = 0, i, diff = 0, seenline = 0;
 
 	ARGBEGIN {
 	case '1':
@@ -44,7 +46,7 @@ main(int argc, char *argv[])
 		break;
 	default:
 		usage();
-	} ARGEND;
+	} ARGEND
 
 	if (argc != 2)
 		usage();
@@ -62,21 +64,29 @@ main(int argc, char *argv[])
 		for (i = 0; i < 2; i++) {
 			if (diff && i == (diff < 0))
 				continue;
-			if (getline(&line[i], &linelen[i], fp[i]) > 0)
+			if ((len = getline(&(line[i].data), &linecap[i],
+			                   fp[i])) > 0) {
+				line[i].len = len;
+				seenline = 1;
 				continue;
+			}
 			if (ferror(fp[i]))
 				eprintf("getline %s:", argv[i]);
-			if (diff && line[!i][0])
-				printline(!i, line[!i]);
-			while (getline(&line[!i], &linelen[!i], fp[!i]) > 0)
-				printline(!i, line[!i]);
+			if ((diff || seenline) && line[!i].data[0])
+				printline(!i, &line[!i]);
+			while ((len = getline(&(line[!i].data), &linecap[!i],
+			                      fp[!i])) > 0) {
+				line[!i].len = len;
+				printline(!i, &line[!i]);
+			}
 			if (ferror(fp[!i]))
 				eprintf("getline %s:", argv[!i]);
 			goto end;
 		}
-		diff = strcmp(line[0], line[1]);
+		diff = linecmp(&line[0], &line[1]);
 		LIMIT(diff, -1, 1);
-		printline((2 - diff) % 3, line[MAX(0, diff)]);
+		seenline = 0;
+		printline((2 - diff) % 3, &line[MAX(0, diff)]);
 	}
 end:
 	ret |= fshut(fp[0], argv[0]);

@@ -68,6 +68,7 @@ void fnck(const char *, const char *, int (*)(const char *, const char *, int), 
 mode_t getumask(void);
 char *humansize(off_t);
 mode_t parsemode(const char *, mode_t, mode_t);
+off_t parseoffset(const char *);
 void putword(FILE *, const char *);
 #undef strtonum
 long long strtonum(const char *, long long, long long, const char **);
@@ -75,3 +76,5 @@ long long enstrtonum(int, const char *, long long, long long);
 long long estrtonum(const char *, long long, long long);
 size_t unescape(char *);
 int mkdirp(const char *);
+#undef memmem
+void *memmem(const void *, size_t, const void *, size_t);

@@ -40,7 +40,9 @@ chownpwgr(const char *path, struct stat *st, void *data, struct recursor *r)
 static void
 usage(void)
 {
-	eprintf("usage: %s [-h] [-R [-H | -L | -P]] [owner][:[group]] file ...\n", argv0);
+	eprintf("usage: %s [-h] [-R [-H | -L | -P]] owner[:[group]] file ...\n"
+	        "       %s [-h] [-R [-H | -L | -P]] :group file ...\n",
+	        argv0, argv0);
 }
 
 int
@@ -67,7 +69,7 @@ main(int argc, char *argv[])
 		break;
 	default:
 		usage();
-	} ARGEND;
+	} ARGEND
 
 	if (argc < 2)
 		usage();
@@ -98,6 +100,9 @@ main(int argc, char *argv[])
 			gid = estrtonum(group, 0, UINT_MAX);
 		}
 	}
+	if (uid == (uid_t)-1 && gid == (gid_t)-1)
+		usage();
+
 	for (argc--, argv++; *argv; argc--, argv++)
 		recurse(*argv, NULL, &r);
 

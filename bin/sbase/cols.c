@@ -9,7 +9,6 @@
 #include <unistd.h>
 
 #include "text.h"
-#include "utf.h"
 #include "util.h"
 
 static void
@@ -24,7 +23,7 @@ main(int argc, char *argv[])
 	FILE *fp;
 	struct winsize w;
 	struct linebuf b = EMPTY_LINEBUF;
-	size_t chars = 65, maxlen = 0, i, j, k, len, bytes, cols, rows;
+	size_t chars = 65, maxlen = 0, i, j, k, len, cols, rows;
 	int cflag = 0, ret = 0;
 	char *p;
 
@@ -35,7 +34,7 @@ main(int argc, char *argv[])
 		break;
 	default:
 		usage();
-	} ARGEND;
+	} ARGEND
 
 	if (!cflag) {
 		if ((p = getenv("COLUMNS")))
@@ -63,10 +62,12 @@ main(int argc, char *argv[])
 	}
 
 	for (i = 0; i < b.nlines; i++) {
-		len = utflen(b.lines[i]);
-		bytes = strlen(b.lines[i]);
-		if (len && bytes && b.lines[i][bytes - 1] == '\n') {
-			b.lines[i][bytes - 1] = '\0';
+		for (j = 0, len = 0; j < b.lines[i].len; j++) {
+			if (UTF8_POINT(b.lines[i].data[j]))
+				len++;
+		}
+		if (len && b.lines[i].data[b.lines[i].len - 1] == '\n') {
+			b.lines[i].data[--(b.lines[i].len)] = '\0';
 			len--;
 		}
 		if (len > maxlen)
@@ -78,8 +79,12 @@ main(int argc, char *argv[])
 
 	for (i = 0; i < rows; i++) {
 		for (j = 0; j < cols && i + j * rows < b.nlines; j++) {
-			len = utflen(b.lines[i + j * rows]);
-			fputs(b.lines[i + j * rows], stdout);
+			for (k = 0, len = 0; k < b.lines[i + j * rows].len; k++) {
+				if (UTF8_POINT(b.lines[i + j * rows].data[k]))
+					len++;
+			}
+			fwrite(b.lines[i + j * rows].data, 1,
+			       b.lines[i + j * rows].len, stdout);
 			if (j < cols - 1)
 				for (k = len; k < maxlen + 1; k++)
 					putchar(' ');

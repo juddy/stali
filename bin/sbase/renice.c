@@ -7,6 +7,14 @@
 
 #include "util.h"
 
+#ifndef PRIO_MIN
+#define PRIO_MIN -NZERO
+#endif
+
+#ifndef PRIO_MAX
+#define PRIO_MAX (NZERO-1)
+#endif
+
 static int
 renice(int which, int who, long adj)
 {
@@ -29,7 +37,7 @@ renice(int which, int who, long adj)
 static void
 usage(void)
 {
-	eprintf("renice -n num [-g | -p | -u] id ...\n");
+	eprintf("usage: %s -n num [-g | -p | -u] id ...\n", argv0);
 }
 
 int
@@ -56,7 +64,7 @@ main(int argc, char *argv[])
 		break;
 	default:
 		usage();
-	} ARGEND;
+	} ARGEND
 
 	if (!argc || !adj)
 		usage();

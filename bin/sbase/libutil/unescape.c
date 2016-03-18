@@ -51,8 +51,8 @@ unescape(char *s)
 		case '\0':
 			eprintf("%s: null escape sequence\n", argv0);
 		default:
-			/* "\O[OO]" octal escape */
-			for (m = i + 1; m < i + 1 + 3 && m < len; m++)
+			/* "\O[OOO]" octal escape */
+			for (m = i + 1; m < i + 1 + 4 && m < len; m++)
 				if (s[m] < '0' || s[m] > '7')
 					break;
 			if (m == i + 1)
@@ -62,7 +62,7 @@ unescape(char *s)
 				q += (s[m] - '0') * factor;
 				factor *= 8;
 			}
-			s[i] = q;
+			s[i] = (q > 255) ? 255 : q;
 		}
 
 		for (m = i + 1; m <= len - off; m++)

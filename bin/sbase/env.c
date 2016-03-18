@@ -22,15 +22,15 @@ main(int argc, char *argv[])
 
 	ARGBEGIN {
 	case 'i':
-		if (environ)
-			*environ = NULL;
+		*environ = NULL;
 		break;
 	case 'u':
-		unsetenv(EARGF(usage()));
+		if (unsetenv(EARGF(usage())) < 0)
+			eprintf("unsetenv:");
 		break;
 	default:
 		usage();
-	} ARGEND;
+	} ARGEND
 
 	for (; *argv && strchr(*argv, '='); argc--, argv++)
 		putenv(*argv);
@@ -39,10 +39,10 @@ main(int argc, char *argv[])
 		execvp(*argv, argv);
 		savederrno = errno;
 		weprintf("execvp %s:", *argv);
-		_exit(126 + (savederrno == EEXIST));
+		_exit(126 + (savederrno == ENOENT));
 	}
 
-	for (; environ && *environ; environ++)
+	for (; *environ; environ++)
 		puts(*environ);
 
 	return fshut(stdout, "<stdout>");

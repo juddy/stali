@@ -553,8 +553,8 @@ find_delim(char *s, Rune delim, int do_brackets)
 		else if (state == BRACKETS_INSIDE        &&  r == ']'  ) { state  = OUTSIDE         ;           }
 		else if (state == OUTSIDE                &&  escape    ) { escape = 0               ;           }
 		else if (state == OUTSIDE                &&  r == '\\' ) { escape = 1               ;           }
-		else if (state == OUTSIDE && do_brackets &&  r == '['  ) { state  = BRACKETS_OPENING;           }
 		else if (state == OUTSIDE                &&  r == delim) return s;
+		else if (state == OUTSIDE && do_brackets &&  r == '['  ) { state  = BRACKETS_OPENING;           }
 	}
 	return s;
 }
@@ -892,6 +892,7 @@ get_s_arg(Cmd *c, char *s)
 	for (; s < p; s++) {
 		if (isdigit(*s)) {
 			c->u.s.occurrence = stol(s, &s);
+			s--; /* for loop will advance pointer */
 		} else {
 			switch (*s) {
 			case 'g': c->u.s.occurrence = 0; break;
@@ -899,7 +900,7 @@ get_s_arg(Cmd *c, char *s)
 			case 'w':
 				/* must be last flag, take everything up to newline/semicolon
 				 * s == p after this */
-				s = get_w_arg(&buf, s);
+				s = get_w_arg(&buf, chomp(s+1));
 				c->u.s.file = buf.u.file;
 				break;
 			}
@@ -1326,10 +1327,10 @@ cmd_l(Cmd *c)
 	 */
 	for (p = patt.str, end = p + strlen(p); p < end; p += rlen) {
 		if (isascii(*p) && escapes[(unsigned int)*p]) {
-			printf("%s", escapes[(unsigned int)*p]);
+			fputs(escapes[(unsigned int)*p], stdout);
 			rlen = 1;
 		} else if (!(rlen = charntorune(&r, p, end - p))) {
-		/* ran out of chars, print the bytes of the short sequence */
+			/* ran out of chars, print the bytes of the short sequence */
 			for (; p < end; p++)
 				printf("\\%03hho", (unsigned char)*p);
 			break;
@@ -1706,7 +1707,7 @@ main(int argc, char *argv[])
 		script = 1;
 		break;
 	default : usage();
-	} ARGEND;
+	} ARGEND
 
 	/* no script to run */
 	if (!script && !argc)

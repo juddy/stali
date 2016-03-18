@@ -188,7 +188,8 @@ spawn(void)
 static void
 usage(void)
 {
-	eprintf("usage: %s [-rtx] [-E eofstr] [-n num] [-s num] [cmd [arg ...]]\n", argv0);
+	eprintf("usage: %s [-rtx] [-E eofstr] [-n num] [-s num] "
+	        "[cmd [arg ...]]\n", argv0);
 }
 
 int
@@ -226,7 +227,7 @@ main(int argc, char *argv[])
 		break;
 	default:
 		usage();
-	} ARGEND;
+	} ARGEND
 
 	do {
 		argsz = 0; i = 0; a = 0;

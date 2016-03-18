@@ -17,13 +17,6 @@
 
 #define BLKSIZ 512
 
-#undef major
-#define major(dev) ((int)(((unsigned int)(dev) >> 8) & 0xff))
-#undef minor
-#define minor(dev) ((int)((dev) & 0xff))
-#undef makedev
-#define makedev(major, minor) (((major) << 8) | (minor))
-
 enum Type {
 	REG       = '0',
 	AREG      = '\0',
@@ -55,12 +48,12 @@ struct header {
 	char prefix[155];
 };
 
-static struct ent {
+static struct dirtime {
 	char *name;
 	time_t mtime;
-} *ents;
+} *dirtimes;
 
-static size_t entslen;
+static size_t dirtimeslen;
 
 static int tarfd;
 static ino_t tarinode;
@@ -79,20 +72,20 @@ static const char *filtertools[] = {
 };
 
 static void
-pushent(char *name, time_t mtime)
+pushdirtime(char *name, time_t mtime)
 {
-	ents = reallocarray(ents, entslen + 1, sizeof(*ents));
-	ents[entslen].name = strdup(name);
-	ents[entslen].mtime = mtime;
-	entslen++;
+	dirtimes = reallocarray(dirtimes, dirtimeslen + 1, sizeof(*dirtimes));
+	dirtimes[dirtimeslen].name = strdup(name);
+	dirtimes[dirtimeslen].mtime = mtime;
+	dirtimeslen++;
 }
 
-static struct ent *
-popent(void)
+static struct dirtime *
+popdirtime(void)
 {
-	if (entslen) {
-		entslen--;
-		return &ents[entslen];
+	if (dirtimeslen) {
+		dirtimeslen--;
+		return &dirtimes[dirtimeslen];
 	}
 	return NULL;
 }
@@ -261,11 +254,12 @@ unarchive(char *fname, ssize_t l, char b[BLKSIZ])
 	long mode, major, minor, type, mtime, uid, gid;
 	struct header *h = (struct header *)b;
 	int fd = -1;
+	struct timespec times[2];
 
 	if (!mflag && ((mtime = strtol(h->mtime, &p, 8)) < 0 || *p != '\0'))
 		eprintf("strtol %s: invalid number\n", h->mtime);
 	if (remove(fname) < 0 && errno != ENOENT)
-		eprintf("remove %s:", fname);
+		weprintf("remove %s:", fname);
 
 	tmp = estrdup(fname);
 	mkdirp(dirname(tmp));
@@ -277,11 +271,9 @@ unarchive(char *fname, ssize_t l, char b[BLKSIZ])
 	case RESERVED:
 		if ((mode = strtol(h->mode, &p, 8)) < 0 || *p != '\0')
 			eprintf("strtol %s: invalid number\n", h->mode);
-		fd = open(fname, O_WRONLY | O_TRUNC | O_CREAT, 0644);
+		fd = open(fname, O_WRONLY | O_TRUNC | O_CREAT, 0600);
 		if (fd < 0)
 			eprintf("open %s:", fname);
-		if (fchmod(fd, mode) < 0)
-			eprintf("fchmod %s:", fname);
 		break;
 	case HARDLINK:
 	case SYMLINK:
@@ -297,6 +289,7 @@ unarchive(char *fname, ssize_t l, char b[BLKSIZ])
 			eprintf("strtol %s: invalid number\n", h->mode);
 		if (mkdir(fname, (mode_t)mode) < 0 && errno != EEXIST)
 			eprintf("mkdir %s:", fname);
+		pushdirtime(fname, mtime);
 		break;
 	case CHARDEV:
 	case BLOCKDEV:
@@ -324,8 +317,6 @@ unarchive(char *fname, ssize_t l, char b[BLKSIZ])
 		eprintf("strtol %s: invalid number\n", h->uid);
 	if ((gid = strtol(h->gid, &p, 8)) < 0 || *p != '\0')
 		eprintf("strtol %s: invalid number\n", h->gid);
-	if (!getuid() && chown(fname, uid, gid))
-		weprintf("chown %s:", fname);
 
 	if (fd != -1) {
 		for (; l > 0; l -= BLKSIZ)
@@ -334,7 +325,23 @@ unarchive(char *fname, ssize_t l, char b[BLKSIZ])
 		close(fd);
 	}
 
-	pushent(fname, mtime);
+	if (h->type == HARDLINK)
+		return 0;
+
+	times[0].tv_sec = times[1].tv_sec = mtime;
+	times[0].tv_nsec = times[1].tv_nsec = 0;
+	if (!mflag && utimensat(AT_FDCWD, fname, times, AT_SYMLINK_NOFOLLOW) < 0)
+		weprintf("utimensat %s:\n", fname);
+	if (h->type == SYMLINK) {
+		if (!getuid() && lchown(fname, uid, gid))
+			weprintf("lchown %s:\n", fname);
+	} else {
+		if (!getuid() && chown(fname, uid, gid))
+			weprintf("chown %s:\n", fname);
+		if (chmod(fname, mode) < 0)
+			eprintf("fchmod %s:\n", fname);
+	}
+
 	return 0;
 }
 
@@ -427,9 +434,9 @@ static void
 xt(int argc, char *argv[], int mode)
 {
 	char b[BLKSIZ], fname[256 + 1], *p;
-	struct timeval times[2];
+	struct timespec times[2];
 	struct header *h = (struct header *)b;
-	struct ent *ent;
+	struct dirtime *dirtime;
 	long size;
 	int i, n;
 	int (*fn)(char *, ssize_t, char[BLKSIZ]) = (mode == 'x') ? unarchive : print;
@@ -470,24 +477,26 @@ xt(int argc, char *argv[], int mode)
 			puts(fname);
 	}
 
-	if (!mflag) {
-		while ((ent = popent())) {
-			times[0].tv_sec = times[1].tv_sec = ent->mtime;
-			times[0].tv_usec = times[1].tv_usec = 0;
-			if (utimes(ent->name, times) < 0)
-				weprintf("utimes %s:", ent->name);
-			free(ent->name);
+	if (mode == 'x' && !mflag) {
+		while ((dirtime = popdirtime())) {
+			times[0].tv_sec = times[1].tv_sec = dirtime->mtime;
+			times[0].tv_nsec = times[1].tv_nsec = 0;
+			if (utimensat(AT_FDCWD, dirtime->name, times, 0) < 0)
+				eprintf("utimensat %s:", fname);
+			free(dirtime->name);
 		}
-		free(ents);
-		ents = NULL;
+		free(dirtimes);
+		dirtimes = NULL;
 	}
 }
 
 static void
 usage(void)
 {
-	eprintf("usage: %s [-C dir] [-J | -Z | -a | -j | -z] -x [-m | -t] [-f file] [file ...]\n"
-		"       %s [-C dir] [-J | -Z | -a | -j | -z] [-h] -c path ... [-f file]\n", argv0, argv0);
+	eprintf("usage: %s [-C dir] [-J | -Z | -a | -j | -z] -x [-m | -t] "
+	        "[-f file] [file ...]\n"
+	        "       %s [-C dir] [-J | -Z | -a | -j | -z] [-h] -c path ... "
+	        "[-f file]\n", argv0, argv0);
 }
 
 int
@@ -530,7 +539,7 @@ main(int argc, char *argv[])
 		break;
 	default:
 		usage();
-	} ARGEND;
+	} ARGEND
 
 	if (!mode)
 		usage();
@@ -541,7 +550,7 @@ main(int argc, char *argv[])
 	switch (mode) {
 	case 'c':
 		tarfd = 1;
-		if (file) {
+		if (file && *file != '-') {
 			tarfd = open(file, O_WRONLY | O_TRUNC | O_CREAT, 0644);
 			if (tarfd < 0)
 				eprintf("open %s:", file);
@@ -562,7 +571,7 @@ main(int argc, char *argv[])
 	case 't':
 	case 'x':
 		tarfd = 0;
-		if (file) {
+		if (file && *file != '-') {
 			tarfd = open(file, O_RDONLY);
 			if (tarfd < 0)
 				eprintf("open %s:", file);
