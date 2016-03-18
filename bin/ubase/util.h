@@ -2,6 +2,14 @@
 #include "arg.h"
 
 #define UTF8_POINT(c) (((c) & 0xc0) != 0x80)
+
+#undef MIN
+#define MIN(x,y)  ((x) < (y) ? (x) : (y))
+#undef MAX
+#define MAX(x,y)  ((x) > (y) ? (x) : (y))
+#undef LIMIT
+#define LIMIT(x, a, b)  (x) = (x) < (a) ? (a) : (x) > (b) ? (b) : (x)
+
 #define LEN(x) (sizeof (x) / sizeof *(x))
 
 /* eprintf.c */
@@ -49,6 +57,12 @@ size_t estrlcat(char *, const char *, size_t);
 #undef strlcpy
 size_t strlcpy(char *, const char *, size_t);
 size_t estrlcpy(char *, const char *, size_t);
+
+/* strtonum.c */
+#undef strtonum
+long long strtonum(const char *, long long, long long, const char **);
+long long enstrtonum(int, const char *, long long, long long);
+long long estrtonum(const char *, long long, long long);
 
 /* tty.c */
 void devtotty(int, int *, int *);

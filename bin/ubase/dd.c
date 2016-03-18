@@ -32,8 +32,7 @@ struct dd_config {
 	uint64_t skip, seek, count, b_in, b_out, rec_in, rec_out;
 	off_t fsize;
 	blksize_t bs;
-	char quiet, nosync, direct;
-	int saved_errno;
+	char quiet, nosync, notrunc, direct;
 	time_t t_start, t_end;
 };
 
@@ -43,8 +42,7 @@ static int
 prepare_copy(struct dd_config *ddc, int *ifd, int *ofd)
 {
 	struct stat st;
-	int fli = O_RDONLY|O_LARGEFILE|O_NOCTTY, flo = O_WRONLY|O_LARGEFILE|O_NOATIME|O_NOCTTY;
-	uid_t euid = 0;
+	int fli = O_RDONLY|O_LARGEFILE|O_NOCTTY, flo = O_WRONLY|O_LARGEFILE|O_CREAT|O_NOATIME|O_NOCTTY;
 	long pagesize;
 
 	if (ddc->direct) {
@@ -52,20 +50,12 @@ prepare_copy(struct dd_config *ddc, int *ifd, int *ofd)
 		flo |= O_DIRECT;
 	}
 
-	if (stat(ddc->in, &st) < 0) {
-		ddc->saved_errno = errno;
+	if (!ddc->in) *ifd = 0;
+	else if ((*ifd = open(ddc->in, fli)) < 0)
 		return -1;
-	}
 
-	euid = geteuid();
-
-	if (!euid || st.st_uid == euid)
-		fli |= O_NOATIME;
-
-	if ((*ifd = open(ddc->in, fli)) < 0) {
-		ddc->saved_errno = errno;
+	if (fstat(*ifd, &st) < 0)
 		return -1;
-	}
 
 	ddc->fsize = st.st_size;
 
@@ -90,14 +80,11 @@ prepare_copy(struct dd_config *ddc, int *ifd, int *ofd)
 	if (!S_ISREG(st.st_mode)) {
 		if (S_ISBLK(st.st_mode)) {
 			if (ioctl(*ifd, BLKGETSIZE64, &ddc->fsize) < 0) {
-				ddc->saved_errno = errno;
 				close(*ifd);
 				return -1;
 			}
 		} else {
 			ddc->fsize = (off_t)-1;
-			if (ddc->count)
-				ddc->fsize = ddc->count*ddc->bs;
 		}
 	}
 
@@ -107,22 +94,40 @@ prepare_copy(struct dd_config *ddc, int *ifd, int *ofd)
 
 	/* skip more bytes than are inside source file? */
 	if (ddc->fsize != (off_t)-1 && ddc->skip >= (uint64_t)ddc->fsize) {
-		ddc->saved_errno = EINVAL;
+		errno = EINVAL;
 		close(*ifd);
 		return -1;
 	}
 
-	if (!ddc->seek)
-		flo |= O_CREAT|O_TRUNC;
+	if (!ddc->seek && !ddc->notrunc)
+		flo |= O_TRUNC;
 
-	if ((*ofd = open(ddc->out, flo, st.st_mode)) < 0) {
-		ddc->saved_errno = errno;
+	if (!ddc->out) *ofd = 1;
+	else if ((*ofd = open(ddc->out, flo, st.st_mode)) < 0) {
 		close(*ifd);
 		return -1;
 	}
 
-	lseek(*ifd, ddc->skip, SEEK_SET);
-	lseek(*ofd, ddc->seek, SEEK_SET);
+	if (ddc->seek && !ddc->notrunc) {
+		if (fstat(*ofd, &st) < 0)
+			return -1;
+		if (!S_ISREG(st.st_mode))
+			;
+		else if (ftruncate(*ofd, ddc->seek) < 0)
+			return -1;
+	}
+
+	if (lseek(*ifd, ddc->skip, SEEK_CUR) < 0) {
+		char buffer[ddc->bs];
+		for (uint64_t i = 0; i < ddc->skip; i += ddc->bs) {
+			if (read(*ifd, &buffer, ddc->bs) < 0) {
+				errno = EINVAL;
+				close(*ifd);
+				return -1;
+			}
+		}
+	}
+	lseek(*ofd, ddc->seek, SEEK_CUR);
 	posix_fadvise(*ifd, ddc->skip, 0, POSIX_FADV_SEQUENTIAL);
 	posix_fadvise(*ofd, 0, 0, POSIX_FADV_DONTNEED);
 
@@ -130,7 +135,7 @@ prepare_copy(struct dd_config *ddc, int *ifd, int *ofd)
 	ddc->count *= ddc->bs;
 
 	/* If no count is given, its the filesize minus skip offset */
-	if (ddc->count == 0)
+	if (ddc->count == (uint64_t) -1)
 		ddc->count = ddc->fsize - ddc->skip;
 
 	return 0;
@@ -147,7 +152,6 @@ copy_splice(struct dd_config *ddc)
 	if (prepare_copy(ddc, &ifd, &ofd) < 0)
 		return -1;
 	if (pipe(p) < 0) {
-		ddc->saved_errno = errno;
 		close(ifd); close(ofd);
 		close(p[0]); close(p[1]);
 		return -1;
@@ -157,6 +161,7 @@ copy_splice(struct dd_config *ddc)
 		if (fcntl(p[0], F_SETPIPE_SZ, 1<<n) != -1)
 			break;
 	}
+	errno = 0;
 #endif
 	n = ddc->bs;
 	for (;ddc->b_out != ddc->count && !sigint;) {
@@ -165,24 +170,18 @@ copy_splice(struct dd_config *ddc)
 		FD_SET(ifd, &rfd);
 		FD_SET(ofd, &wfd);
 		r = select(ifd > ofd ? ifd + 1 : ofd + 1, &rfd, &wfd, NULL, NULL);
-		if (r < 0) {
-			ddc->saved_errno = errno;
+		if (r < 0)
 			break;
-		}
 		if (FD_ISSET(ifd, &rfd) == 1 && FD_ISSET(ofd, &wfd) == 1) {
 			if (n > ddc->count - ddc->b_out)
 				n = ddc->count - ddc->b_out;
 			r = splice(ifd, NULL, p[1], NULL, n, SPLICE_F_MORE);
-			if (r <= 0) {
-				ddc->saved_errno = errno;
+			if (r <= 0)
 				break;
-			}
 			++ddc->rec_in;
 			r = splice(p[0], NULL, ofd, NULL, r, SPLICE_F_MORE);
-			if (r <= 0) {
-				ddc->saved_errno = errno;
+			if (r <= 0)
 				break;
-			}
 			ddc->b_out += r;
 			++ddc->rec_out;
 		}
@@ -239,7 +238,8 @@ static void
 usage(void)
 {
 	eprintf("usage: %s [-h] [if=infile] [of=outfile] [bs[=N]] [seek=N] "
-	        "[skip=N] [count=N] [direct] [quiet] [nosync]\n", argv0);
+	        "[skip=N] [count=N] [direct] [quiet] [nosync]"
+		"[conv=notrunc]\n", argv0);
 }
 
 int
@@ -252,16 +252,17 @@ main(int argc, char *argv[])
 	argv0 = argv[0];
 	memset(&config, 0, sizeof(config));
 	config.bs = 1<<16;
-	config.in = "/dev/stdin";
-	config.out = "/dev/stdout";
+	config.in = NULL;
+	config.out = NULL;
+	config.count = (uint64_t) -1;
 
 	/* emulate 'dd' argument parsing */
 	for (i = 1; i < argc; ++i) {
 		memset(buf, 0, sizeof(buf));
-		if (sscanf(argv[i], "if=%1023s", buf) == 1)
-			config.in = strdup(buf);
-		else if (sscanf(argv[i], "of=%1023s", buf) == 1)
-			config.out = strdup(buf);
+		if (strncmp(argv[i], "if=", 3) == 0)
+			config.in = argv[i]+3;
+		else if (strncmp(argv[i], "of=", 3) == 0)
+			config.out = argv[i]+3;
 		else if (sscanf(argv[i], "skip=%1023s", buf) == 1)
 			config.skip = estrtoul(buf, 0);
 		else if (sscanf(argv[i], "seek=%1023s", buf) == 1)
@@ -278,12 +279,11 @@ main(int argc, char *argv[])
 			config.quiet = 1;
 		else if (strcmp(argv[i], "nosync") == 0)
 			config.nosync = 1;
+		else if (strcmp(argv[i], "conv=notrunc") == 0)
+			config.notrunc = 1;
 		else if (strcmp(argv[i], "-h") == 0)
 			usage();
 	}
-
-	if (!config.in || !config.out)
-		usage();
 
 	signal(SIGPIPE, SIG_IGN);
 	signal(SIGINT, sig_int);
@@ -294,5 +294,5 @@ main(int argc, char *argv[])
 
 	if (config.nosync == 0)
 		sync();
-	return config.saved_errno;
+	return errno;
 }
