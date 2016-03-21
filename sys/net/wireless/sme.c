@@ -917,6 +917,12 @@ void __cfg80211_disconnected(struct net_device *dev, const u8 *ie,
 
 	nl80211_send_disconnected(rdev, dev, reason, ie, ie_len, from_ap);
 
+	/* stop critical protocol if supported */
+	if (rdev->ops->crit_proto_stop && rdev->crit_proto_nlportid) {
+		rdev->crit_proto_nlportid = 0;
+		rdev_crit_proto_stop(rdev, wdev);
+	}
+
 	/*
 	 * Delete all the keys ... pairwise keys can't really
 	 * exist any more anyway, but default keys might.
@@ -938,7 +944,8 @@ void __cfg80211_disconnected(struct net_device *dev, const u8 *ie,
 }
 
 void cfg80211_disconnected(struct net_device *dev, u16 reason,
-			   const u8 *ie, size_t ie_len, gfp_t gfp)
+			   const u8 *ie, size_t ie_len,
+			   bool locally_generated, gfp_t gfp)
 {
 	struct wireless_dev *wdev = dev->ieee80211_ptr;
 	struct cfg80211_registered_device *rdev = wiphy_to_rdev(wdev->wiphy);
@@ -954,6 +961,7 @@ void cfg80211_disconnected(struct net_device *dev, u16 reason,
 	ev->dc.ie_len = ie_len;
 	memcpy((void *)ev->dc.ie, ie, ie_len);
 	ev->dc.reason = reason;
+	ev->dc.locally_generated = locally_generated;
 
 	spin_lock_irqsave(&wdev->event_lock, flags);
 	list_add_tail(&ev->list, &wdev->event_list);

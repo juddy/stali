@@ -62,18 +62,13 @@ static void hypfs_add_dentry(struct dentry *dentry)
 	hypfs_last_dentry = dentry;
 }
 
-static inline int hypfs_positive(struct dentry *dentry)
-{
-	return d_really_is_positive(dentry) && !d_unhashed(dentry);
-}
-
 static void hypfs_remove(struct dentry *dentry)
 {
 	struct dentry *parent;
 
 	parent = dentry->d_parent;
-	mutex_lock(&d_inode(parent)->i_mutex);
-	if (hypfs_positive(dentry)) {
+	inode_lock(d_inode(parent));
+	if (simple_positive(dentry)) {
 		if (d_is_dir(dentry))
 			simple_rmdir(d_inode(parent), dentry);
 		else
@@ -81,7 +76,7 @@ static void hypfs_remove(struct dentry *dentry)
 	}
 	d_delete(dentry);
 	dput(dentry);
-	mutex_unlock(&d_inode(parent)->i_mutex);
+	inode_unlock(d_inode(parent));
 }
 
 static void hypfs_delete_tree(struct dentry *root)
@@ -336,7 +331,7 @@ static struct dentry *hypfs_create_file(struct dentry *parent, const char *name,
 	struct dentry *dentry;
 	struct inode *inode;
 
-	mutex_lock(&d_inode(parent)->i_mutex);
+	inode_lock(d_inode(parent));
 	dentry = lookup_one_len(name, parent, strlen(name));
 	if (IS_ERR(dentry)) {
 		dentry = ERR_PTR(-ENOMEM);
@@ -364,7 +359,7 @@ static struct dentry *hypfs_create_file(struct dentry *parent, const char *name,
 	d_instantiate(dentry, inode);
 	dget(dentry);
 fail:
-	mutex_unlock(&d_inode(parent)->i_mutex);
+	inode_unlock(d_inode(parent));
 	return dentry;
 }
 

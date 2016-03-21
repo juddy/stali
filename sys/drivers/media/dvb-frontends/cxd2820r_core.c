@@ -287,7 +287,8 @@ static int cxd2820r_set_frontend(struct dvb_frontend *fe)
 err:
 	return ret;
 }
-static int cxd2820r_read_status(struct dvb_frontend *fe, fe_status_t *status)
+
+static int cxd2820r_read_status(struct dvb_frontend *fe, enum fe_status *status)
 {
 	struct cxd2820r_priv *priv = fe->demodulator_priv;
 	int ret;
@@ -501,7 +502,7 @@ static enum dvbfe_search cxd2820r_search(struct dvb_frontend *fe)
 	struct cxd2820r_priv *priv = fe->demodulator_priv;
 	struct dtv_frontend_properties *c = &fe->dtv_property_cache;
 	int ret, i;
-	fe_status_t status = 0;
+	enum fe_status status = 0;
 
 	dev_dbg(&priv->i2c->dev, "%s: delsys=%d\n", __func__,
 			fe->dtv_property_cache.delivery_system);
@@ -721,7 +722,7 @@ struct dvb_frontend *cxd2820r_attach(const struct cxd2820r_config *cfg,
 #ifdef CONFIG_GPIOLIB
 		/* add GPIOs */
 		priv->gpio_chip.label = KBUILD_MODNAME;
-		priv->gpio_chip.dev = &priv->i2c->dev;
+		priv->gpio_chip.parent = &priv->i2c->dev;
 		priv->gpio_chip.owner = THIS_MODULE;
 		priv->gpio_chip.direction_output =
 				cxd2820r_gpio_direction_output;

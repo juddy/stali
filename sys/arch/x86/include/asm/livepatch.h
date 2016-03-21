@@ -21,6 +21,7 @@
 #ifndef _ASM_X86_LIVEPATCH_H
 #define _ASM_X86_LIVEPATCH_H
 
+#include <asm/setup.h>
 #include <linux/module.h>
 #include <linux/ftrace.h>
 
@@ -40,7 +41,7 @@ static inline void klp_arch_set_pc(struct pt_regs *regs, unsigned long ip)
 	regs->ip = ip;
 }
 #else
-#error Live patching support is disabled; check CONFIG_LIVEPATCH
+#error Include linux/livepatch.h, not asm/livepatch.h
 #endif
 
 #endif /* _ASM_X86_LIVEPATCH_H */

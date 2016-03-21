@@ -20,11 +20,6 @@
 
 #include "internal.h"
 
-static inline int simple_positive(struct dentry *dentry)
-{
-	return d_really_is_positive(dentry) && !d_unhashed(dentry);
-}
-
 int simple_getattr(struct vfsmount *mnt, struct dentry *dentry,
 		   struct kstat *stat)
 {
@@ -94,7 +89,7 @@ EXPORT_SYMBOL(dcache_dir_close);
 loff_t dcache_dir_lseek(struct file *file, loff_t offset, int whence)
 {
 	struct dentry *dentry = file->f_path.dentry;
-	mutex_lock(&d_inode(dentry)->i_mutex);
+	inode_lock(d_inode(dentry));
 	switch (whence) {
 		case 1:
 			offset += file->f_pos;
@@ -102,7 +97,7 @@ loff_t dcache_dir_lseek(struct file *file, loff_t offset, int whence)
 			if (offset >= 0)
 				break;
 		default:
-			mutex_unlock(&d_inode(dentry)->i_mutex);
+			inode_unlock(d_inode(dentry));
 			return -EINVAL;
 	}
 	if (offset != file->f_pos) {
@@ -129,7 +124,7 @@ loff_t dcache_dir_lseek(struct file *file, loff_t offset, int whence)
 			spin_unlock(&dentry->d_lock);
 		}
 	}
-	mutex_unlock(&d_inode(dentry)->i_mutex);
+	inode_unlock(d_inode(dentry));
 	return offset;
 }
 EXPORT_SYMBOL(dcache_dir_lseek);
@@ -946,7 +941,7 @@ int __generic_file_fsync(struct file *file, loff_t start, loff_t end,
 	if (err)
 		return err;
 
-	mutex_lock(&inode->i_mutex);
+	inode_lock(inode);
 	ret = sync_mapping_buffers(inode->i_mapping);
 	if (!(inode->i_state & I_DIRTY_ALL))
 		goto out;
@@ -958,7 +953,7 @@ int __generic_file_fsync(struct file *file, loff_t start, loff_t end,
 		ret = err;
 
 out:
-	mutex_unlock(&inode->i_mutex);
+	inode_unlock(inode);
 	return ret;
 }
 EXPORT_SYMBOL(__generic_file_fsync);
@@ -1024,14 +1019,12 @@ int noop_fsync(struct file *file, loff_t start, loff_t end, int datasync)
 }
 EXPORT_SYMBOL(noop_fsync);
 
-void kfree_put_link(struct dentry *dentry, struct nameidata *nd,
-				void *cookie)
+/* Because kfree isn't assignment-compatible with void(void*) ;-/ */
+void kfree_link(void *p)
 {
-	char *s = nd_get_link(nd);
-	if (!IS_ERR(s))
-		kfree(s);
+	kfree(p);
 }
-EXPORT_SYMBOL(kfree_put_link);
+EXPORT_SYMBOL(kfree_link);
 
 /*
  * nop .set_page_dirty method so that people can use .page_mkwrite on
@@ -1094,6 +1087,18 @@ simple_nosetlease(struct file *filp, long arg, struct file_lock **flp,
 }
 EXPORT_SYMBOL(simple_nosetlease);
 
+const char *simple_get_link(struct dentry *dentry, struct inode *inode,
+			    struct delayed_call *done)
+{
+	return inode->i_link;
+}
+EXPORT_SYMBOL(simple_get_link);
+
+const struct inode_operations simple_symlink_inode_operations = {
+	.get_link = simple_get_link,
+	.readlink = generic_readlink
+};
+EXPORT_SYMBOL(simple_symlink_inode_operations);
 
 /*
  * Operations for a permanently empty directory.
@@ -1176,7 +1181,7 @@ void make_empty_dir_inode(struct inode *inode)
 	inode->i_uid = GLOBAL_ROOT_UID;
 	inode->i_gid = GLOBAL_ROOT_GID;
 	inode->i_rdev = 0;
-	inode->i_size = 2;
+	inode->i_size = 0;
 	inode->i_blkbits = PAGE_SHIFT;
 	inode->i_blocks = 0;
 

@@ -5,7 +5,7 @@
  *  Copyright (C) 2008-2009 Red Hat, Inc., Ingo Molnar
  *  Copyright (C) 2009 Jaswinder Singh Rajput
  *  Copyright (C) 2009 Advanced Micro Devices, Inc., Robert Richter
- *  Copyright (C) 2008-2009 Red Hat, Inc., Peter Zijlstra <pzijlstr@redhat.com>
+ *  Copyright (C) 2008-2009 Red Hat, Inc., Peter Zijlstra
  *  Copyright (C) 2009 Intel Corporation, <markus.t.metzger@intel.com>
  *  Copyright (C) 2009 Google, Inc., Stephane Eranian
  *
@@ -135,6 +135,7 @@ static int x86_pmu_extra_regs(u64 config, struct perf_event *event)
 }
 
 static atomic_t active_events;
+static atomic_t pmc_refcount;
 static DEFINE_MUTEX(pmc_reserve_mutex);
 
 #ifdef CONFIG_X86_LOCAL_APIC
@@ -271,6 +272,7 @@ msr_fail:
 static void hw_perf_event_destroy(struct perf_event *event)
 {
 	x86_release_hardware();
+	atomic_dec(&active_events);
 }
 
 void hw_perf_lbr_event_destroy(struct perf_event *event)
@@ -324,16 +326,16 @@ int x86_reserve_hardware(void)
 {
 	int err = 0;
 
-	if (!atomic_inc_not_zero(&active_events)) {
+	if (!atomic_inc_not_zero(&pmc_refcount)) {
 		mutex_lock(&pmc_reserve_mutex);
-		if (atomic_read(&active_events) == 0) {
+		if (atomic_read(&pmc_refcount) == 0) {
 			if (!reserve_pmc_hardware())
 				err = -EBUSY;
 			else
 				reserve_ds_buffers();
 		}
 		if (!err)
-			atomic_inc(&active_events);
+			atomic_inc(&pmc_refcount);
 		mutex_unlock(&pmc_reserve_mutex);
 	}
 
@@ -342,7 +344,7 @@ int x86_reserve_hardware(void)
 
 void x86_release_hardware(void)
 {
-	if (atomic_dec_and_mutex_lock(&active_events, &pmc_reserve_mutex)) {
+	if (atomic_dec_and_mutex_lock(&pmc_refcount, &pmc_reserve_mutex)) {
 		release_pmc_hardware();
 		release_ds_buffers();
 		mutex_unlock(&pmc_reserve_mutex);
@@ -355,28 +357,30 @@ void x86_release_hardware(void)
  */
 int x86_add_exclusive(unsigned int what)
 {
-	int ret = -EBUSY, i;
+	int i;
 
-	if (atomic_inc_not_zero(&x86_pmu.lbr_exclusive[what]))
-		return 0;
-
-	mutex_lock(&pmc_reserve_mutex);
-	for (i = 0; i < ARRAY_SIZE(x86_pmu.lbr_exclusive); i++) {
-		if (i != what && atomic_read(&x86_pmu.lbr_exclusive[i]))
-			goto out;
+	if (!atomic_inc_not_zero(&x86_pmu.lbr_exclusive[what])) {
+		mutex_lock(&pmc_reserve_mutex);
+		for (i = 0; i < ARRAY_SIZE(x86_pmu.lbr_exclusive); i++) {
+			if (i != what && atomic_read(&x86_pmu.lbr_exclusive[i]))
+				goto fail_unlock;
+		}
+		atomic_inc(&x86_pmu.lbr_exclusive[what]);
+		mutex_unlock(&pmc_reserve_mutex);
 	}
 
-	atomic_inc(&x86_pmu.lbr_exclusive[what]);
-	ret = 0;
+	atomic_inc(&active_events);
+	return 0;
 
-out:
+fail_unlock:
 	mutex_unlock(&pmc_reserve_mutex);
-	return ret;
+	return -EBUSY;
 }
 
 void x86_del_exclusive(unsigned int what)
 {
 	atomic_dec(&x86_pmu.lbr_exclusive[what]);
+	atomic_dec(&active_events);
 }
 
 int x86_setup_perfctr(struct perf_event *event)
@@ -478,6 +482,9 @@ int x86_pmu_hw_config(struct perf_event *event)
 			/* Support for IP fixup */
 			if (x86_pmu.lbr_nr || x86_pmu.intel_cap.pebs_format >= 2)
 				precise++;
+
+			if (x86_pmu.pebs_prec_dist)
+				precise++;
 		}
 
 		if (event->attr.precise_ip > precise)
@@ -557,6 +564,7 @@ static int __x86_pmu_event_init(struct perf_event *event)
 	if (err)
 		return err;
 
+	atomic_inc(&active_events);
 	event->destroy = hw_perf_event_destroy;
 
 	event->hw.idx = -1;
@@ -895,10 +903,7 @@ int x86_schedule_events(struct cpu_hw_events *cpuc, int n, int *assign)
 			if (x86_pmu.commit_scheduling)
 				x86_pmu.commit_scheduling(cpuc, i, assign[i]);
 		}
-	}
-
-	if (!assign || unsched) {
-
+	} else {
 		for (i = 0; i < n; i++) {
 			e = cpuc->event_list[i];
 			/*
@@ -1111,13 +1116,16 @@ int x86_perf_event_set_period(struct perf_event *event)
 
 	per_cpu(pmc_prev_left[idx], smp_processor_id()) = left;
 
-	/*
-	 * The hw event starts counting from this event offset,
-	 * mark it to be able to extra future deltas:
-	 */
-	local64_set(&hwc->prev_count, (u64)-left);
+	if (!(hwc->flags & PERF_X86_EVENT_AUTO_RELOAD) ||
+	    local64_read(&hwc->prev_count) != (u64)-left) {
+		/*
+		 * The hw event starts counting from this event offset,
+		 * mark it to be able to extra future deltas:
+		 */
+		local64_set(&hwc->prev_count, (u64)-left);
 
-	wrmsrl(hwc->event_base, (u64)(-left) & x86_pmu.cntval_mask);
+		wrmsrl(hwc->event_base, (u64)(-left) & x86_pmu.cntval_mask);
+	}
 
 	/*
 	 * Due to erratum on certan cpu we need
@@ -1170,7 +1178,7 @@ static int x86_pmu_add(struct perf_event *event, int flags)
 	 * skip the schedulability test here, it will be performed
 	 * at commit time (->commit_txn) as a whole.
 	 */
-	if (cpuc->group_flag & PERF_EVENT_TXN)
+	if (cpuc->txn_flags & PERF_PMU_TXN_ADD)
 		goto done_collect;
 
 	ret = x86_pmu.schedule_events(cpuc, n, assign);
@@ -1321,7 +1329,7 @@ static void x86_pmu_del(struct perf_event *event, int flags)
 	 * XXX assumes any ->del() called during a TXN will only be on
 	 * an event added during that same TXN.
 	 */
-	if (cpuc->group_flag & PERF_EVENT_TXN)
+	if (cpuc->txn_flags & PERF_PMU_TXN_ADD)
 		return;
 
 	/*
@@ -1429,6 +1437,10 @@ perf_event_nmi_handler(unsigned int cmd, struct pt_regs *regs)
 	u64 finish_clock;
 	int ret;
 
+	/*
+	 * All PMUs/events that share this PMI handler should make sure to
+	 * increment active_events for their events.
+	 */
 	if (!atomic_read(&active_events))
 		return NMI_DONE;
 
@@ -1522,6 +1534,7 @@ static void __init filter_events(struct attribute **attrs)
 {
 	struct device_attribute *d;
 	struct perf_pmu_events_attr *pmu_attr;
+	int offset = 0;
 	int i, j;
 
 	for (i = 0; attrs[i]; i++) {
@@ -1530,7 +1543,7 @@ static void __init filter_events(struct attribute **attrs)
 		/* str trumps id */
 		if (pmu_attr->event_str)
 			continue;
-		if (x86_pmu.event_map(i))
+		if (x86_pmu.event_map(i + offset))
 			continue;
 
 		for (j = i; attrs[j]; j++)
@@ -1538,11 +1551,19 @@ static void __init filter_events(struct attribute **attrs)
 
 		/* Check the shifted attr. */
 		i--;
+
+		/*
+		 * event_map() is index based, the attrs array is organized
+		 * by increasing event index. If we shift the events, then
+		 * we need to compensate for the event_map(), otherwise
+		 * we are looking up the wrong event in the map
+		 */
+		offset++;
 	}
 }
 
 /* Merge two pointer arrays */
-static __init struct attribute **merge_attr(struct attribute **a, struct attribute **b)
+__init struct attribute **merge_attr(struct attribute **a, struct attribute **b)
 {
 	struct attribute **new;
 	int j, i;
@@ -1739,11 +1760,22 @@ static inline void x86_pmu_read(struct perf_event *event)
  * Start group events scheduling transaction
  * Set the flag to make pmu::enable() not perform the
  * schedulability test, it will be performed at commit time
+ *
+ * We only support PERF_PMU_TXN_ADD transactions. Save the
+ * transaction flags but otherwise ignore non-PERF_PMU_TXN_ADD
+ * transactions.
  */
-static void x86_pmu_start_txn(struct pmu *pmu)
+static void x86_pmu_start_txn(struct pmu *pmu, unsigned int txn_flags)
 {
+	struct cpu_hw_events *cpuc = this_cpu_ptr(&cpu_hw_events);
+
+	WARN_ON_ONCE(cpuc->txn_flags);		/* txn already in flight */
+
+	cpuc->txn_flags = txn_flags;
+	if (txn_flags & ~PERF_PMU_TXN_ADD)
+		return;
+
 	perf_pmu_disable(pmu);
-	__this_cpu_or(cpu_hw_events.group_flag, PERF_EVENT_TXN);
 	__this_cpu_write(cpu_hw_events.n_txn, 0);
 }
 
@@ -1754,7 +1786,16 @@ static void x86_pmu_start_txn(struct pmu *pmu)
  */
 static void x86_pmu_cancel_txn(struct pmu *pmu)
 {
-	__this_cpu_and(cpu_hw_events.group_flag, ~PERF_EVENT_TXN);
+	unsigned int txn_flags;
+	struct cpu_hw_events *cpuc = this_cpu_ptr(&cpu_hw_events);
+
+	WARN_ON_ONCE(!cpuc->txn_flags);	/* no txn in flight */
+
+	txn_flags = cpuc->txn_flags;
+	cpuc->txn_flags = 0;
+	if (txn_flags & ~PERF_PMU_TXN_ADD)
+		return;
+
 	/*
 	 * Truncate collected array by the number of events added in this
 	 * transaction. See x86_pmu_add() and x86_pmu_*_txn().
@@ -1777,6 +1818,13 @@ static int x86_pmu_commit_txn(struct pmu *pmu)
 	int assign[X86_PMC_IDX_MAX];
 	int n, ret;
 
+	WARN_ON_ONCE(!cpuc->txn_flags);	/* no txn in flight */
+
+	if (cpuc->txn_flags & ~PERF_PMU_TXN_ADD) {
+		cpuc->txn_flags = 0;
+		return 0;
+	}
+
 	n = cpuc->n_events;
 
 	if (!x86_pmu_initialized())
@@ -1792,7 +1840,7 @@ static int x86_pmu_commit_txn(struct pmu *pmu)
 	 */
 	memcpy(cpuc->assign, assign, n*sizeof(int));
 
-	cpuc->group_flag &= ~PERF_EVENT_TXN;
+	cpuc->txn_flags = 0;
 	perf_pmu_enable(pmu);
 	return 0;
 }
@@ -2170,24 +2218,32 @@ static unsigned long get_segment_base(unsigned int segment)
 	int idx = segment >> 3;
 
 	if ((segment & SEGMENT_TI_MASK) == SEGMENT_LDT) {
+#ifdef CONFIG_MODIFY_LDT_SYSCALL
+		struct ldt_struct *ldt;
+
 		if (idx > LDT_ENTRIES)
 			return 0;
 
-		if (idx > current->active_mm->context.size)
+		/* IRQs are off, so this synchronizes with smp_store_release */
+		ldt = lockless_dereference(current->active_mm->context.ldt);
+		if (!ldt || idx > ldt->size)
 			return 0;
 
-		desc = current->active_mm->context.ldt;
+		desc = &ldt->entries[idx];
+#else
+		return 0;
+#endif
 	} else {
 		if (idx > GDT_ENTRIES)
 			return 0;
 
-		desc = raw_cpu_ptr(gdt_page.gdt);
+		desc = raw_cpu_ptr(gdt_page.gdt) + idx;
 	}
 
-	return get_desc_base(desc + idx);
+	return get_desc_base(desc);
 }
 
-#ifdef CONFIG_COMPAT
+#ifdef CONFIG_IA32_EMULATION
 
 #include <asm/compat.h>
 
@@ -2206,12 +2262,19 @@ perf_callchain_user32(struct pt_regs *regs, struct perf_callchain_entry *entry)
 	ss_base = get_segment_base(regs->ss);
 
 	fp = compat_ptr(ss_base + regs->bp);
+	pagefault_disable();
 	while (entry->nr < PERF_MAX_STACK_DEPTH) {
 		unsigned long bytes;
 		frame.next_frame     = 0;
 		frame.return_address = 0;
 
-		bytes = copy_from_user_nmi(&frame, fp, sizeof(frame));
+		if (!access_ok(VERIFY_READ, fp, 8))
+			break;
+
+		bytes = __copy_from_user_nmi(&frame.next_frame, fp, 4);
+		if (bytes != 0)
+			break;
+		bytes = __copy_from_user_nmi(&frame.return_address, fp+4, 4);
 		if (bytes != 0)
 			break;
 
@@ -2221,6 +2284,7 @@ perf_callchain_user32(struct pt_regs *regs, struct perf_callchain_entry *entry)
 		perf_callchain_store(entry, cs_base + frame.return_address);
 		fp = compat_ptr(ss_base + frame.next_frame);
 	}
+	pagefault_enable();
 	return 1;
 }
 #else
@@ -2258,12 +2322,19 @@ perf_callchain_user(struct perf_callchain_entry *entry, struct pt_regs *regs)
 	if (perf_callchain_user32(regs, entry))
 		return;
 
+	pagefault_disable();
 	while (entry->nr < PERF_MAX_STACK_DEPTH) {
 		unsigned long bytes;
 		frame.next_frame	     = NULL;
 		frame.return_address = 0;
 
-		bytes = copy_from_user_nmi(&frame, fp, sizeof(frame));
+		if (!access_ok(VERIFY_READ, fp, 16))
+			break;
+
+		bytes = __copy_from_user_nmi(&frame.next_frame, fp, 8);
+		if (bytes != 0)
+			break;
+		bytes = __copy_from_user_nmi(&frame.return_address, fp+8, 8);
 		if (bytes != 0)
 			break;
 
@@ -2271,8 +2342,9 @@ perf_callchain_user(struct perf_callchain_entry *entry, struct pt_regs *regs)
 			break;
 
 		perf_callchain_store(entry, frame.return_address);
-		fp = frame.next_frame;
+		fp = (void __user *)frame.next_frame;
 	}
+	pagefault_enable();
 }
 
 /*

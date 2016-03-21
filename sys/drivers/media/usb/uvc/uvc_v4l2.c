@@ -483,9 +483,6 @@ static int uvc_v4l2_open(struct file *file)
 	uvc_trace(UVC_TRACE_CALLS, "uvc_v4l2_open\n");
 	stream = video_drvdata(file);
 
-	if (stream->dev->state & UVC_DEV_DISCONNECTED)
-		return -ENODEV;
-
 	ret = usb_autopm_get_interface(stream->dev->intf);
 	if (ret < 0)
 		return ret;
@@ -721,6 +718,18 @@ static int uvc_ioctl_qbuf(struct file *file, void *fh, struct v4l2_buffer *buf)
 		return -EBUSY;
 
 	return uvc_queue_buffer(&stream->queue, buf);
+}
+
+static int uvc_ioctl_expbuf(struct file *file, void *fh,
+			    struct v4l2_exportbuffer *exp)
+{
+	struct uvc_fh *handle = fh;
+	struct uvc_streaming *stream = handle->stream;
+
+	if (!uvc_has_privileges(handle))
+		return -EBUSY;
+
+	return uvc_export_buffer(&stream->queue, exp);
 }
 
 static int uvc_ioctl_dqbuf(struct file *file, void *fh, struct v4l2_buffer *buf)
@@ -974,6 +983,22 @@ static int uvc_ioctl_g_ext_ctrls(struct file *file, void *fh,
 	unsigned int i;
 	int ret;
 
+	if (ctrls->which == V4L2_CTRL_WHICH_DEF_VAL) {
+		for (i = 0; i < ctrls->count; ++ctrl, ++i) {
+			struct v4l2_queryctrl qc = { .id = ctrl->id };
+
+			ret = uvc_query_v4l2_ctrl(chain, &qc);
+			if (ret < 0) {
+				ctrls->error_idx = i;
+				return ret;
+			}
+
+			ctrl->value = qc.default_value;
+		}
+
+		return 0;
+	}
+
 	ret = uvc_ctrl_begin(chain);
 	if (ret < 0)
 		return ret;
@@ -1000,6 +1025,10 @@ static int uvc_ioctl_s_try_ext_ctrls(struct uvc_fh *handle,
 	struct uvc_video_chain *chain = handle->chain;
 	unsigned int i;
 	int ret;
+
+	/* Default value cannot be changed */
+	if (ctrls->which == V4L2_CTRL_WHICH_DEF_VAL)
+		return -EINVAL;
 
 	ret = uvc_ctrl_begin(chain);
 	if (ret < 0)
@@ -1478,6 +1507,7 @@ const struct v4l2_ioctl_ops uvc_ioctl_ops = {
 	.vidioc_reqbufs = uvc_ioctl_reqbufs,
 	.vidioc_querybuf = uvc_ioctl_querybuf,
 	.vidioc_qbuf = uvc_ioctl_qbuf,
+	.vidioc_expbuf = uvc_ioctl_expbuf,
 	.vidioc_dqbuf = uvc_ioctl_dqbuf,
 	.vidioc_create_bufs = uvc_ioctl_create_bufs,
 	.vidioc_streamon = uvc_ioctl_streamon,

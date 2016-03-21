@@ -358,6 +358,10 @@ static int rtl2832_init(struct dvb_frontend *fe)
 	dev_dbg(&client->dev, "load settings for tuner=%02x\n",
 		dev->pdata->tuner);
 	switch (dev->pdata->tuner) {
+	case RTL2832_TUNER_FC2580:
+		len = ARRAY_SIZE(rtl2832_tuner_init_fc2580);
+		init = rtl2832_tuner_init_fc2580;
+		break;
 	case RTL2832_TUNER_FC0012:
 	case RTL2832_TUNER_FC0013:
 		len = ARRAY_SIZE(rtl2832_tuner_init_fc0012);
@@ -375,6 +379,10 @@ static int rtl2832_init(struct dvb_frontend *fe)
 	case RTL2832_TUNER_R828D:
 		len = ARRAY_SIZE(rtl2832_tuner_init_r820t);
 		init = rtl2832_tuner_init_r820t;
+		break;
+	case RTL2832_TUNER_SI2157:
+		len = ARRAY_SIZE(rtl2832_tuner_init_si2157);
+		init = rtl2832_tuner_init_si2157;
 		break;
 	default:
 		ret = -EINVAL;
@@ -680,7 +688,7 @@ err:
 	return ret;
 }
 
-static int rtl2832_read_status(struct dvb_frontend *fe, fe_status_t *status)
+static int rtl2832_read_status(struct dvb_frontend *fe, enum fe_status *status)
 {
 	struct rtl2832_dev *dev = fe->demodulator_priv;
 	struct i2c_client *client = dev->client;
@@ -968,7 +976,8 @@ static int rtl2832_regmap_read(void *context, const void *reg_buf,
 
 	ret = __i2c_transfer(client->adapter, msg, 2);
 	if (ret != 2) {
-		dev_warn(&client->dev, "i2c reg read failed %d\n", ret);
+		dev_warn(&client->dev, "i2c reg read failed %d reg %02x\n",
+			 ret, *(u8 *)reg_buf);
 		if (ret >= 0)
 			ret = -EREMOTEIO;
 		return ret;
@@ -991,7 +1000,8 @@ static int rtl2832_regmap_write(void *context, const void *data, size_t count)
 
 	ret = __i2c_transfer(client->adapter, msg, 1);
 	if (ret != 1) {
-		dev_warn(&client->dev, "i2c reg write failed %d\n", ret);
+		dev_warn(&client->dev, "i2c reg write failed %d reg %02x\n",
+			 ret, *(u8 *)data);
 		if (ret >= 0)
 			ret = -EREMOTEIO;
 		return ret;
@@ -1020,7 +1030,8 @@ static int rtl2832_regmap_gather_write(void *context, const void *reg,
 
 	ret = __i2c_transfer(client->adapter, msg, 1);
 	if (ret != 1) {
-		dev_warn(&client->dev, "i2c reg write failed %d\n", ret);
+		dev_warn(&client->dev, "i2c reg write failed %d reg %02x\n",
+			 ret, *(u8 const *)reg);
 		if (ret >= 0)
 			ret = -EREMOTEIO;
 		return ret;
@@ -1086,18 +1097,6 @@ static int rtl2832_enable_slave_ts(struct i2c_client *client)
 		goto err;
 
 	ret = rtl2832_bulk_write(client, 0x0bc, "\x18", 1);
-	if (ret)
-		goto err;
-
-	ret = rtl2832_bulk_write(client, 0x022, "\x01", 1);
-	if (ret)
-		goto err;
-
-	ret = rtl2832_bulk_write(client, 0x026, "\x1f", 1);
-	if (ret)
-		goto err;
-
-	ret = rtl2832_bulk_write(client, 0x027, "\xff", 1);
 	if (ret)
 		goto err;
 
@@ -1311,7 +1310,6 @@ MODULE_DEVICE_TABLE(i2c, rtl2832_id_table);
 
 static struct i2c_driver rtl2832_driver = {
 	.driver = {
-		.owner	= THIS_MODULE,
 		.name	= "rtl2832",
 	},
 	.probe		= rtl2832_probe,

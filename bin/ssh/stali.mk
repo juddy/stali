@@ -521,7 +521,7 @@ uninstall:
 	cd $(DESTDIR)$(MANPREFIX)/man1 && rm -f $(MAN)
 
 clean:
-	rm -f $(BIN) $(OBJ) 
+	rm -f $(BIN) $(OBJ) $(LIB)
 
 .PHONY:
 	all install uninstall clean
