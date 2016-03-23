@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/sh -x
 
 umask 022
 
@@ -92,7 +92,11 @@ echo rc.init: enable core dumps
 ulimit -c unlimited
 
 echo
+/bin/sh
+
+echo
 /bin/sh -c '/bin/respawn /bin/getty /dev/tty1 linux' &>/dev/null &
 /bin/sh -c '/bin/respawn /bin/getty /dev/tty2 linux' &>/dev/null &
 /bin/sh -c '/bin/respawn /bin/getty /dev/tty3 linux' &>/dev/null &
 /bin/sh -c '/bin/respawn /bin/getty /dev/tty4 linux' &>/dev/null &
+
