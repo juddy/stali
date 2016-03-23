@@ -3,7 +3,7 @@ ROOT=../..
 include $(ROOT)/config.mk
 
 OBJS = sinit.o
-BIN = sinit
+BIN = init
 
 include $(ROOT)/mk/bin.mk
 

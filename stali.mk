@@ -4,7 +4,7 @@ export STALISRC:=$(shell pwd)
 
 include $(ROOT)/config.mk
 
-SUBDIRS = lib bin sys
+SUBDIRS = etc lib bin sys 
 
 world: all
 

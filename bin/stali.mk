@@ -9,6 +9,7 @@ SUBDIRS = hbase\
 	mksh\
 	e2fsprogs\
 	libarchive\
-	ssh
+	ssh\
+	rc
 
 include $(ROOT)/mk/dir.mk
