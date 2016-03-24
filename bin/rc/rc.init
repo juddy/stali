@@ -19,7 +19,6 @@ umask 022
 
 /bin/smdev -s
 
-echo rc.init: smdev as the kernel hotplug
 echo /bin/smdev > /proc/sys/kernel/hotplug
 
 # HACK!
@@ -62,7 +61,6 @@ esac
 
 if test -n "$HWCLOCK_PARAMS"
 then
-	echo rc.init: set hwclock
 	test -n "$TIMEZONE" && export TZ="$TIMEZONE"
 	/bin/hwclock $HWCLOCK_PARAMS /dev/rtc0
 	unset TZ
@@ -79,7 +77,6 @@ else
 	/bin/chmod 0644 /log/dmesg.log
 fi
 
-echo rc.init: enable core dumps
 ulimit -c unlimited
 
 echo

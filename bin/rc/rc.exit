@@ -33,7 +33,6 @@ esac
 
 if test -n "$HWCLOCK_PARAMS"
 then
-	echo rc.exit: saving system clock
 	test -n "$TIMEZONE" && export TZ="$TIMEZONE"
 	/bin/hwclock $HWCLOCK_PARAMS /dev/rtc0
 	unset TZ
