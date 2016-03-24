@@ -13,13 +13,13 @@ CLEAN_FILES =
 
 include $(ROOT)/mk/lib.mk
 
-postinst: zlib.h
-	@echo installing include file to $(DESTDIR)$(PREFIX)/include
-	@mkdir -p $(DESTDIR)$(PREFIX)/include
-	@cp -f zlib.h $(DESTDIR)$(PREFIX)/include/zlib.h
+#postinst: zlib.h
+#	@echo installing include file to $(DESTDIR)$(PREFIX)/include
+#	@mkdir -p $(DESTDIR)$(PREFIX)/include
+#	@cp -f zlib.h $(DESTDIR)$(PREFIX)/include/zlib.h
 
-postuninst:
-	@echo uninstalling include file from $(DESTDIR)$(PREFIX)/include
-	@rm -f $(DESTDIR)$(PREFIX)/include/zlib.h
+#postuninst:
+#	@echo uninstalling include file from $(DESTDIR)$(PREFIX)/include
+#	@rm -f $(DESTDIR)$(PREFIX)/include/zlib.h
 
 

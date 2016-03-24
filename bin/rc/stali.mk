@@ -9,10 +9,10 @@ all: $(BIN)
 clean:
 
 install: all
-	@mkdir -p $(DESTDIR)$(PREFIX)/bin
-	@cp -f $(BIN) $(DESTDIR)$(PREFIX)/bin
-	@cd $(DESTDIR)$(PREFIX)/bin && chmod 755 $(BIN)
+	@mkdir -p $(DESTDIR)$(PREFIX)/etc
+	@cp -f $(BIN) $(DESTDIR)$(PREFIX)/etc
+	@cd $(DESTDIR)$(PREFIX)/etc && chmod 755 $(BIN)
 
 uninstall:
-	@cd $(DESTDIR)$(PREFIX)/bin && rm -f $(BIN)
+	@cd $(DESTDIR)$(PREFIX)/etc && rm -f $(BIN)
 

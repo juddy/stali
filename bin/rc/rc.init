@@ -4,8 +4,6 @@ umask 022
 
 . /etc/rc.conf
 
-echo rc.init: sta.li - statically linked linux 
-
 # Soft reboot on ctrl-alt-del
 /bin/ctrlaltdel -s
 
@@ -19,7 +17,6 @@ echo rc.init: sta.li - statically linked linux
 
 /bin/mount -o remount,ro /
 
-echo rc.init: smdev
 /bin/smdev -s
 
 echo rc.init: smdev as the kernel hotplug
@@ -32,7 +29,6 @@ cd /dev
 /bin/ln -sf /proc/self/fd/2 stderr
 cd - 1>/dev/null
 
-echo rc.init: fsck
 /bin/fsck -ATa
 if test $? -eq 1
 then
@@ -41,14 +37,11 @@ then
 	/bin/halt -r
 fi
 
-echo rc.init: mount filesystems
 /bin/mount -o remount,rw /
 /bin/mount -a
 
-echo "rc.init: hostname $HOSTNAME"
 /bin/hostname $HOSTNAME
 
-echo rc.init: init lo interface
 /bin/ip addr add 127.0.0.1/8 dev lo broadcast + scope host
 /bin/ip link set lo up
 
@@ -75,17 +68,15 @@ then
 	unset TZ
 fi
 
-echo rc.init: init random seed
 test -f /etc/random-seed && /bin/cat /etc/random-seed >/dev/urandom
 /bin/dd if=/dev/urandom of=/etc/random-seed count=1 bs=512 2>/dev/null
 
-echo rc.init: dumping dmesg output to /var/log/dmesg.log
-/bin/dmesg > /var/log/dmesg.log
+/bin/dmesg > /log/dmesg.log
 if test -e /proc/sys/kernel/dmesg_restrict && test $(/bin/cat /proc/sys/kernel/dmesg_restrict) = "1"
 then
-	/bin/chmod 0600 /var/log/dmesg.log
+	/bin/chmod 0600 /log/dmesg.log
 else
-	/bin/chmod 0644 /var/log/dmesg.log
+	/bin/chmod 0644 /log/dmesg.log
 fi
 
 echo rc.init: enable core dumps

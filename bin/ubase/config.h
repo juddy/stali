@@ -4,8 +4,8 @@
 #define ENV_PATH	"/bin"
 #define PW_CIPHER	"$6$"	/* SHA-512 */
 #undef UTMP_PATH
-#define UTMP_PATH	"/var/run/utmp"
+#define UTMP_PATH	"/run/utmp"
 #undef BTMP_PATH
-#define BTMP_PATH	"/var/log/btmp"
+#define BTMP_PATH	"/log/btmp"
 #undef WTMP_PATH
-#define WTMP_PATH	"/var/log/wtmp"
+#define WTMP_PATH	"/log/wtmp"
