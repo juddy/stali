@@ -10,6 +10,8 @@ SUBDIRS = hbase\
 	e2fsprogs\
 	libarchive\
 	ssh\
-	rc
+	rc\
+	sdhcp\
+	iproute2
 
 include $(ROOT)/mk/dir.mk
