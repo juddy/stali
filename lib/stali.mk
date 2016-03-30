@@ -1,5 +1,5 @@
 ROOT=..
 
-SUBDIRS = zlib libressl
+SUBDIRS = zlib libressl ncurses
 
 include $(ROOT)/mk/dir.mk
