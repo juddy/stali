@@ -12,6 +12,7 @@ SUBDIRS = hbase\
 	ssh\
 	rc\
 	sdhcp\
-	iproute2
+	iproute2\
+	curl
 
 include $(ROOT)/mk/dir.mk

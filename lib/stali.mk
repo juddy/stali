@@ -1,5 +1,5 @@
 ROOT=..
 
-SUBDIRS = zlib
+SUBDIRS = zlib libressl
 
 include $(ROOT)/mk/dir.mk
