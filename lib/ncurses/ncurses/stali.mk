@@ -161,7 +161,7 @@ OBJS = tty/hardscroll.o \
 	base/version.o
 
 LIB = ../libncurses.a
-CLEAN_FILES = *.c
+CLEAN_FILES = *.c init_keytry.h ../include/ncurses_def.h ../include/curses.h ../include/term.h ../include/hashsize.h
 
 include $(ROOT)/mk/lib.mk
 
