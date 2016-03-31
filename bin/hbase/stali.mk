@@ -5,9 +5,6 @@ SUBDIRS =\
 	libuxre\
 	yacc\
 	_install\
-	ed\
-	grep\
-	od\
 	stty\
 	awk\
 	patch\

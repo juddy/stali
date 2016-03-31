@@ -1,8 +1,0 @@
-BIN = ed
-OBJ = ed.o
-LOCAL_CFLAGS = -DSU3 -DSHELL=\"$SHELL\"
-INSTALL_BIN = ed
-INSTALL_MAN1 = ed.1
-DEPS = libcommon
-
-<$mkbuild/mk.default

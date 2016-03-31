@@ -1,8 +1,0 @@
-BIN = od
-OBJ = od.o
-LOCAL_CFLAGS = -DSUS
-INSTALL_BIN = od
-INSTALL_MAN1 = od.1
-DEPS = libcommon
-
-<$mkbuild/mk.default

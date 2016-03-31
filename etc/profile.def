@@ -1,5 +1,5 @@
 PATH=/bin
 MANPATH=/share/man
-export PATH MANPATH
-
+TERM=vt100
+export PATH MANPATH TERM
 umask 022

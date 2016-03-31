@@ -13,6 +13,7 @@ SUBDIRS = hbase\
 	rc\
 	sdhcp\
 	iproute2\
-	curl
+	curl\
+	nvi
 
 include $(ROOT)/mk/dir.mk

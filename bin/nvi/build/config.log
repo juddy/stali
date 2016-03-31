@@ -1,0 +1,138 @@
+This file contains any messages produced by compilers while
+running configure, to aid debugging if configure makes a mistake.
+
+cc -o conftest conftest.c
+cc -o conftest conftest.c
+configure: In function 'main':
+configure:889:10: warning: incompatible implicit declaration of built-in function 'exit'
+ main() { exit(0); }
+          ^
+cc -E
+cc -E
+configure:1353:27: fatal error: X11/Intrinsic.h: No such file or directory
+ #include <$x_direct_test_include>
+                           ^
+compilation terminated.
+cc -o conftest conftest.c -lXt
+/usr/bin/ld: cannot find -lXt
+collect2: error: ld returned 1 exit status
+cc -o conftest conftest.c -ltermlib
+/usr/bin/ld: cannot find -ltermlib
+collect2: error: ld returned 1 exit status
+cc -o conftest conftest.c -ltermcap
+cc -E -I$(srcdir)/curses
+cc -E -I$(srcdir)/curses
+cc -E -I$(srcdir)/curses
+cc -E -I$(srcdir)/curses
+cc -E -I$(srcdir)/curses
+cc -o conftest -I$(srcdir)/curses conftest.c -ltermcap
+configure: In function 'main':
+configure:1875:67: warning: incompatible implicit declaration of built-in function 'exit'
+ if (XOR (islower (i), ISLOWER (i)) || toupper (i) != TOUPPER (i)) exit(2);
+                                                                   ^
+cc -E -I$(srcdir)/curses
+cc -c -I$(srcdir)/curses conftest.c
+cc -c -I$(srcdir)/curses conftest.c
+configure: In function 't':
+configure:1960:2: error: unknown type name 'not'
+  not big endian
+  ^
+configure:1960:10: error: expected '=', ',', ';', 'asm' or '__attribute__' before 'endian'
+  not big endian
+          ^
+cc -c -I$(srcdir)/curses conftest.c
+cc -c -I$(srcdir)/curses conftest.c
+cc -E -I$(srcdir)/curses
+cc -E -I$(srcdir)/curses
+cc -E -I$(srcdir)/curses
+cc -E -I$(srcdir)/curses
+cc -c -I$(srcdir)/curses conftest.c
+cc -o conftest -I$(srcdir)/curses conftest.c -ltermcap
+cc -o conftest -I$(srcdir)/curses conftest.c -ltermcap
+cc -o conftest -I$(srcdir)/curses conftest.c -ltermcap
+cc -o conftest -I$(srcdir)/curses conftest.c -ltermcap
+configure:2291:6: warning: conflicting types for built-in function 'memchr'
+ char $ac_func();
+      ^
+cc -o conftest -I$(srcdir)/curses conftest.c -ltermcap
+configure:2291:6: warning: conflicting types for built-in function 'memcpy'
+ char $ac_func();
+      ^
+cc -o conftest -I$(srcdir)/curses conftest.c -ltermcap
+configure:2291:6: warning: conflicting types for built-in function 'memmove'
+ char $ac_func();
+      ^
+cc -o conftest -I$(srcdir)/curses conftest.c -ltermcap
+configure:2291:6: warning: conflicting types for built-in function 'memset'
+ char $ac_func();
+      ^
+cc -o conftest -I$(srcdir)/curses conftest.c -ltermcap
+cc -o conftest -I$(srcdir)/curses conftest.c -ltermcap
+cc -o conftest -I$(srcdir)/curses conftest.c -ltermcap
+configure:2391:6: warning: conflicting types for built-in function 'snprintf'
+ char $ac_func();
+      ^
+cc -o conftest -I$(srcdir)/curses conftest.c -ltermcap
+configure:2391:6: warning: conflicting types for built-in function 'strdup'
+ char $ac_func();
+      ^
+cc -o conftest -I$(srcdir)/curses conftest.c -ltermcap
+cc -o conftest -I$(srcdir)/curses conftest.c -ltermcap
+configure:2391:6: warning: conflicting types for built-in function 'strpbrk'
+ char $ac_func();
+      ^
+cc -o conftest -I$(srcdir)/curses conftest.c -ltermcap
+cc -o conftest -I$(srcdir)/curses conftest.c -ltermcap
+cc -o conftest -I$(srcdir)/curses conftest.c -ltermcap
+configure:2491:6: warning: conflicting types for built-in function 'vsnprintf'
+ char $ac_func();
+      ^
+cc -o conftest -I$(srcdir)/curses conftest.c -ltermcap
+cc -o conftest -I$(srcdir)/curses conftest.c -ltermcap
+cc -o conftest -I$(srcdir)/curses conftest.c -ltermcap
+cc -o conftest -I$(srcdir)/curses conftest.c -ltermcap
+cc -o conftest -I$(srcdir)/curses conftest.c -ltermcap
+cc -o conftest -I$(srcdir)/curses conftest.c -ltermcap
+cc -E -I$(srcdir)/curses
+configure:2941:19: fatal error: vfork.h: No such file or directory
+ #include <vfork.h>
+                   ^
+compilation terminated.
+cc -o conftest -I$(srcdir)/curses conftest.c -ltermcap
+configure: In function 'sparc_address_test':
+configure:3049:7: warning: incompatible implicit declaration of built-in function '_exit'
+       _exit (arg);
+       ^
+configure: In function 'main':
+configure:3079:7: warning: incompatible implicit declaration of built-in function '_exit'
+       _exit(1);
+       ^
+configure:3093:5: warning: incompatible implicit declaration of built-in function 'exit'
+     exit(
+     ^
+cc -o conftest -I$(srcdir)/curses conftest.c -ltermcap
+cc -o conftest -I$(srcdir)/curses conftest.c -ltermcap
+cc -o conftest -I$(srcdir)/curses conftest.c -ltermcap
+cc -o conftest -I$(srcdir)/curses conftest.c -ltermcap
+cc -o conftest -I$(srcdir)/curses conftest.c -ltermcap
+cc -o conftest -I$(srcdir)/curses conftest.c -ltermcap
+cc -o conftest -I$(srcdir)/curses conftest.c -ltermcap
+/tmp/ccom6Ibu.o: In function `t':
+conftest.c:(.text+0x1a): warning: revoke is not implemented and will always fail
+cc -o conftest -I$(srcdir)/curses conftest.c -ltermcap
+configure: In function 'main':
+configure:3640:22: warning: incompatible implicit declaration of built-in function 'exit'
+ main(){char buf[20]; exit(sprintf(buf, "XXX") != 3);}
+                      ^
+configure:3640:27: warning: incompatible implicit declaration of built-in function 'sprintf'
+ main(){char buf[20]; exit(sprintf(buf, "XXX") != 3);}
+                           ^
+cc -c -I$(srcdir)/regex -I$(srcdir)/db/include -I$(srcdir)/curses conftest.c
+cc -c -I$(srcdir)/regex -I$(srcdir)/db/include -I$(srcdir)/curses conftest.c
+cc -c -I$(srcdir)/regex -I$(srcdir)/db/include -I$(srcdir)/curses conftest.c
+cc -c -I$(srcdir)/regex -I$(srcdir)/db/include -I$(srcdir)/curses conftest.c
+cc -c -I$(srcdir)/regex -I$(srcdir)/db/include -I$(srcdir)/curses conftest.c
+cc -c -I$(srcdir)/regex -I$(srcdir)/db/include -I$(srcdir)/curses conftest.c
+cc -c -I$(srcdir)/regex -I$(srcdir)/db/include -I$(srcdir)/curses conftest.c
+cc -c -I$(srcdir)/regex -I$(srcdir)/db/include -I$(srcdir)/curses conftest.c
+cc -c -I$(srcdir)/regex -I$(srcdir)/db/include -I$(srcdir)/curses conftest.c
