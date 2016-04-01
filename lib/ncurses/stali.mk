@@ -1,6 +1,7 @@
 ROOT=../..
 
 SUBDIRS =\
-	ncurses
+	ncurses\
+	misc
 
 include $(ROOT)/mk/dir.mk

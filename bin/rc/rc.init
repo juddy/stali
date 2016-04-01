@@ -39,8 +39,6 @@ fi
 /bin/mount -o remount,rw /
 /bin/mount -a
 
-/bin/hostname $HOSTNAME
-
 /bin/ip addr add 127.0.0.1/8 dev lo broadcast + scope host
 /bin/ip link set lo up
 
