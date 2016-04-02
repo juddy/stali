@@ -85,6 +85,8 @@ freadahead (FILE *fp)
   if (fp->state == 4 /* WR */ || fp->rp >= fp->wp)
     return 0;
   return fp->wp - fp->rp;
+#elif defined __stali__
+  return 0;
 #elif defined SLOW_BUT_NO_HACKS     /* users can define this */
   abort ();
   return 0;

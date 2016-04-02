@@ -3,7 +3,7 @@ ROOT=../../..
 include $(ROOT)/config.mk
 
 CFLAGS += -I.
-CPPFLAGS +=  -DSLOW_BUT_NO_HACKS -D_POSIX_VERSION=200809
+CPPFLAGS +=
 LIB = libgzip.a
 OBJS = stripslash.o\
 	localcharset.o\
