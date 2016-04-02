@@ -14,6 +14,8 @@ SUBDIRS = hbase\
 	sdhcp\
 	iproute2\
 	curl\
-	vis
+	vis\
+	kbd\
+	gzip
 
 include $(ROOT)/mk/dir.mk
