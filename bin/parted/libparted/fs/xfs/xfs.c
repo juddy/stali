@@ -28,7 +28,7 @@
 #  define _(String) (String)
 #endif /* ENABLE_NLS */
 
-#include <uuid/uuid.h>
+#include <linux/uuid.h>
 #include "platform_defs.h"
 #include "xfs_types.h"
 #include "xfs_sb.h"

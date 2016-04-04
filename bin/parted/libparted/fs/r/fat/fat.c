@@ -21,7 +21,7 @@
 
 #include "fat.h"
 #include "calc.h"
-#include "../../../labels/misc.h"
+#include "misc.h"
 
 PedFileSystem*
 fat_alloc (const PedGeometry* geom)

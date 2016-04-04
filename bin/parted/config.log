@@ -894,7 +894,7 @@ configure:8580: $? = 0
 configure:8580: result: yes
 configure:8580: checking for _set_invalid_parameter_handler
 configure:8580: gcc -std=gnu99 -o conftest -g -O2   conftest.c  >&5
-/tmp/cc6yKY4F.o: In function `main':
+/tmp/cc5bs3kt.o: In function `main':
 /home/anselm/src/bin/parted/conftest.c:72: undefined reference to `_set_invalid_parameter_handler'
 collect2: error: ld returned 1 exit status
 configure:8580: $? = 1
@@ -2089,7 +2089,7 @@ configure:12894: result: yes
 configure:12894: checking for pthread.h
 configure:12894: result: yes
 configure:12922: gcc -std=gnu99 -o conftest -g -O2   conftest.c  >&5
-/tmp/cc3tEBZc.o: In function `main':
+/tmp/cc3d1HNa.o: In function `main':
 /home/anselm/src/bin/parted/conftest.c:115: undefined reference to `pthread_mutexattr_init'
 collect2: error: ld returned 1 exit status
 configure:12922: $? = 1
@@ -5542,7 +5542,7 @@ configure:25070: $? = 0
 configure:25082: result: yes
 configure:25137: checking for getppriv
 configure:25137: gcc -std=gnu99 -o conftest -g -O2   conftest.c  >&5
-/tmp/ccbF8o8i.o: In function `main':
+/tmp/ccMWMVwr.o: In function `main':
 /home/anselm/src/bin/parted/conftest.c:410: undefined reference to `getppriv'
 collect2: error: ld returned 1 exit status
 configure:25137: $? = 1
@@ -7957,7 +7957,7 @@ configure:38623: checking for canonicalize_file_name
 configure:38623: result: yes
 configure:38642: checking for library containing blkid_probe_get_topology
 configure:38673: gcc -std=gnu99 -o conftest -g -O2   -rdynamic conftest.c  >&5
-/tmp/cc3mdJUD.o: In function `main':
+/tmp/ccdiY2gH.o: In function `main':
 /home/anselm/src/bin/parted/conftest.c:415: undefined reference to `blkid_probe_get_topology'
 collect2: error: ld returned 1 exit status
 configure:38673: $? = 1
@@ -8806,7 +8806,7 @@ configure: failed program was:
 configure:38690: result: no
 configure:38699: checking for blkid_probe_get_topology
 configure:38699: gcc -std=gnu99 -o conftest -g -O2   -rdynamic conftest.c  >&5
-/tmp/ccZZaEOG.o: In function `main':
+/tmp/ccx9RQpy.o: In function `main':
 /home/anselm/src/bin/parted/conftest.c:438: undefined reference to `blkid_probe_get_topology'
 collect2: error: ld returned 1 exit status
 configure:38699: $? = 1
@@ -10010,7 +10010,7 @@ BITSIZEOF_SIG_ATOMIC_T=''
 BITSIZEOF_SIZE_T=''
 BITSIZEOF_WCHAR_T=''
 BITSIZEOF_WINT_T=''
-BUILDINFO='anselm@stali, 04 Apr 2016 21:53'
+BUILDINFO='anselm@stali, 04 Apr 2016 22:12'
 CC='gcc -std=gnu99'
 CCDEPMODE='depmode=gcc3'
 CFLAGS='-g -O2'

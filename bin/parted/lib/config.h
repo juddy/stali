@@ -28,7 +28,7 @@
 /* #undef C_ALLOCA */
 
 /* Enable assertions, etc. */
-#define DEBUG 1
+/*#define DEBUG 1*/
 
 /* Probing functionality only */
 /* #undef DISCOVER_ONLY */
@@ -37,7 +37,7 @@
 /* #undef DOUBLE_SLASH_IS_DISTINCT_ROOT */
 
 /* Lazy linking to fs libs */
-#define DYNAMIC_LOADING 1
+/*#define DYNAMIC_LOADING 1*/
 
 /* device mapper (libdevmapper) support */
 /* #undef ENABLE_DEVICE_MAPPER */
@@ -47,7 +47,7 @@
 
 /* Define to 1 if translation of program messages to the user's native
    language is requested. */
-#define ENABLE_NLS 1
+/*#define ENABLE_NLS 1*/
 
 /* Include PC98 partition tables. (Sometimes excluded to avoid collisions with
    msdos partition tables */
@@ -264,7 +264,7 @@
 #define HAVE_ALLOCA_H 1
 
 /* Has backtrace support */
-#define HAVE_BACKTRACE 1
+/*#define HAVE_BACKTRACE 1*/
 
 /* Define to 1 if you have the <blkid/blkid.h> header file. */
 /* #undef HAVE_BLKID_BLKID_H */

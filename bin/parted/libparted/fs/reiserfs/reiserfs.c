@@ -29,7 +29,7 @@
 
 #include <config.h>
 
-#include <uuid/uuid.h>
+#include <linux/uuid.h>
 #include <fcntl.h>
 #include <errno.h>
 

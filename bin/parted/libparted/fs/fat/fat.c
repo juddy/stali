@@ -18,7 +18,7 @@
 
 #include <config.h>
 #include <string.h>
-#include <uuid/uuid.h>
+#include <linux/uuid.h>
 
 #include "fat.h"
 

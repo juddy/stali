@@ -36,7 +36,7 @@
 #include <sys/ioctl.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include <uuid/uuid.h>
+#include <linux/uuid.h>
 #include <stdbool.h>
 #include <errno.h>
 #include <iconv.h>
@@ -45,6 +45,7 @@
 #include "verify.h"
 
 #include "pt-tools.h"
+#include "misc.h"
 
 #if ENABLE_NLS
 #  include <libintl.h>
