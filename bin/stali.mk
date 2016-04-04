@@ -17,6 +17,7 @@ SUBDIRS = hbase\
 	vis\
 	kbd\
 	gzip\
-	abduco
+	abduco\
+	dvtm
 
 include $(ROOT)/mk/dir.mk
