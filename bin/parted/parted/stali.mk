@@ -11,7 +11,7 @@ OBJS = parted.o\
 	ui.o
 CPPFLAGS += 
 CFLAGS += -I. -I../lib -I../include
-LDFLAGS += ../lib/libputil.a ../libparted/libparted.a
+LDFLAGS += ../libparted/libparted.a ../../e2fsprogs/lib/libuuid.a ../lib/libputil.a 
 
 include $(ROOT)/mk/bin.mk
 

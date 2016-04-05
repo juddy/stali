@@ -2,7 +2,7 @@ ROOT=../../..
 
 include $(ROOT)/config.mk
 
-CFLAGS += -I. -I../lib -I../include -Ilabels
+CFLAGS += -I. -I../lib -I../include -Ilabels -I../../e2fsprogs/lib
 CPPFLAGS += 
 #fs/xfs/xfs.o\
 
@@ -47,7 +47,6 @@ OBJS = cs/constraint.o\
 	fs/hfs/probe.o\
 	fs/btrfs/btrfs.o\
 	fs/ufs/ufs.o\
-	libparted.o\
 	unit.o\
 	architecture.o\
 	filesys.o\
@@ -68,7 +67,8 @@ OBJS = cs/constraint.o\
 	labels/sun.o\
 	labels/efi_crc32.o\
 	labels/bsd.o\
-	device.o
+	device.o\
+	libparted.o
 LIB = libparted.a
 
 include $(ROOT)/mk/lib.mk

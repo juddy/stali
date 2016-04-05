@@ -17,9 +17,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>. */
 
 #include <inttypes.h>
-#include <linux/uuid.h>
-
-typedef unsigned char uuid_t[16];
+#include <uuid/uuid.h>
 
 /* hack: use the ext2 uuid library to generate a reasonably random (hopefully
  * with /dev/random) number.  Unfortunately, we can only use 4 bytes of it.

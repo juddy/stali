@@ -280,7 +280,7 @@
 #define HAVE_CALLOC_POSIX 1
 
 /* Define to 1 if you have the `canonicalize_file_name' function. */
-#define HAVE_CANONICALIZE_FILE_NAME 1
+/*#define HAVE_CANONICALIZE_FILE_NAME 1*/
 
 /* Define to 1 if you have the Mac OS X function CFLocaleCopyCurrent in the
    CoreFoundation framework. */

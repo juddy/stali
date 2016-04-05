@@ -5,6 +5,7 @@ include $(ROOT)/config.mk
 CFLAGS += -I.
 CPPFLAGS += 
 OBJS = xstrtol.o\
+	xstrtoll.o\
 	stripslash.o\
 	version-etc-fsf.o\
 	localcharset.o\
@@ -38,6 +39,8 @@ OBJS = xstrtol.o\
 	mbrtowc.o\
 	c-strncasecmp.o\
 	progname.o\
+	error.o\
+	canonicalize-lgpl.o\
 	xalloc-die.o
 GEN = fcntl.h\
 	inttypes.h\

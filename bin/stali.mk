@@ -8,6 +8,7 @@ SUBDIRS = hbase\
 	utmp\
 	mksh\
 	e2fsprogs\
+	parted\
 	libarchive\
 	ssh\
 	rc\

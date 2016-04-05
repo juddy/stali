@@ -99,7 +99,9 @@ init_disk_types ()
 }
 
 extern void ped_file_system_amiga_init (void);
+#ifndef __stali__
 extern void ped_file_system_xfs_init (void);
+#endif
 extern void ped_file_system_ufs_init (void);
 extern void ped_file_system_reiserfs_init (void);
 extern void ped_file_system_ntfs_init (void);
@@ -115,7 +117,9 @@ static void
 init_file_system_types ()
 {
 	ped_file_system_amiga_init ();
+#ifndef __stali__
 	ped_file_system_xfs_init ();
+#endif
 	ped_file_system_ufs_init ();
 	ped_file_system_reiserfs_init ();
 	ped_file_system_ntfs_init ();
@@ -186,7 +190,9 @@ extern void ped_file_system_linux_swap_done (void);
 extern void ped_file_system_ntfs_done (void);
 extern void ped_file_system_reiserfs_done (void);
 extern void ped_file_system_ufs_done (void);
+#ifndef __stali__
 extern void ped_file_system_xfs_done (void);
+#endif
 extern void ped_file_system_amiga_done (void);
 extern void ped_file_system_btrfs_done (void);
 
@@ -202,7 +208,9 @@ done_file_system_types ()
 	ped_file_system_ntfs_done ();
 	ped_file_system_reiserfs_done ();
 	ped_file_system_ufs_done ();
+#ifndef __stali__
 	ped_file_system_xfs_done ();
+#endif
 	ped_file_system_amiga_done ();
 	ped_file_system_btrfs_done ();
 }

@@ -31,7 +31,7 @@
 #endif /* ENABLE_NLS */
 
 #include <unistd.h>
-#include <linux/uuid.h>
+#include <uuid/uuid.h>
 
 #define SWAP_SPECIFIC(fs) ((SwapSpecific*) (fs->type_specific))
 #define BUFFER_SIZE 128
