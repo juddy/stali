@@ -17,7 +17,7 @@ $(BIN): $(OBJS)
 
 clean:
 	@echo cleaning
-	@rm -f $(BIN) $(OBJS) $(CLEAN_FILES)
+	@rm -f $(BINS) $(BIN) $(OBJS) $(CLEAN_FILES)
 
 install: all preinst postinst
 
@@ -25,7 +25,7 @@ preinst:
 	@echo installing executable file to $(DESTDIR)$(PREFIX)/bin
 	@mkdir -p $(DESTDIR)$(PREFIX)/bin
 	@cp -f $(BIN) $(DESTDIR)$(PREFIX)/bin
-	@chmod 755 $(DESTDIR)$(PREFIX)/bin/$(BIN)
+	@cd $(DESTDIR)$(PREFIX)/bin/$(BIN) && chmod 755 $(BIN)
 	@if test -f $(BIN).1 ; then\
 		echo installing manual page to $(DESTDIR)$(MANPREFIX)/man1;\
 		mkdir -p $(DESTDIR)$(MANPREFIX)/man1;\

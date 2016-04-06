@@ -19,6 +19,7 @@ SUBDIRS = hbase\
 	kbd\
 	gzip\
 	abduco\
-	dvtm
+	dvtm\
+	git
 
 include $(ROOT)/mk/dir.mk
