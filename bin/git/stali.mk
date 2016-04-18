@@ -425,4 +425,4 @@ uninstall:
 	@cd $(DESTDIR)$(PREFIX)/bin && rm -f git-remote-https git-remote-ftp git-remote-ftps
 	@rm -rf $(DESTDIR)$(PREFIX)/share/git-core
 
-.PHONY: deps options clean install preinst postinst uninstall preuninst postuninst
+.PHONY: deps options clean install uninstall
