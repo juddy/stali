@@ -1,0 +1,45 @@
+am_libmpfr_la_OBJECTS = exceptions$U.lo extract$U.lo uceil_exp2$U.lo \
+	uceil_log2$U.lo ufloor_log2$U.lo add$U.lo add1$U.lo \
+	add_ui$U.lo agm$U.lo clear$U.lo cmp$U.lo cmp_abs$U.lo \
+	cmp_si$U.lo cmp_ui$U.lo comparisons$U.lo div_2exp$U.lo \
+	div_2si$U.lo div_2ui$U.lo div$U.lo div_ui$U.lo dump$U.lo \
+	eq$U.lo exp10$U.lo exp2$U.lo exp3$U.lo exp$U.lo frac$U.lo \
+	get_d$U.lo get_exp$U.lo get_str$U.lo init$U.lo inp_str$U.lo \
+	isinteger$U.lo isinf$U.lo isnan$U.lo isnum$U.lo \
+	const_log2$U.lo log$U.lo modf$U.lo mul_2exp$U.lo mul_2si$U.lo \
+	mul_2ui$U.lo mul$U.lo mul_ui$U.lo neg$U.lo next$U.lo \
+	out_str$U.lo printf$U.lo vasprintf$U.lo const_pi$U.lo pow$U.lo \
+	pow_si$U.lo pow_ui$U.lo print_raw$U.lo print_rnd_mode$U.lo \
+	random2$U.lo random$U.lo reldiff$U.lo round_prec$U.lo set$U.lo \
+	setmax$U.lo setmin$U.lo set_d$U.lo set_dfl_prec$U.lo \
+	set_exp$U.lo set_rnd$U.lo set_f$U.lo set_prc_raw$U.lo \
+	set_prec$U.lo set_q$U.lo set_si$U.lo set_str$U.lo \
+	set_str_raw$U.lo set_ui$U.lo set_z$U.lo sqrt$U.lo sqrt_ui$U.lo \
+	sub$U.lo sub1$U.lo sub_ui$U.lo rint$U.lo ui_div$U.lo \
+	ui_sub$U.lo urandomb$U.lo get_z_exp$U.lo swap$U.lo \
+	factorial$U.lo cosh$U.lo sinh$U.lo tanh$U.lo sinh_cosh$U.lo \
+	acosh$U.lo asinh$U.lo atanh$U.lo atan$U.lo cmp2$U.lo \
+	exp_2$U.lo asin$U.lo const_euler$U.lo cos$U.lo sin$U.lo \
+	tan$U.lo fma$U.lo fms$U.lo hypot$U.lo log1p$U.lo expm1$U.lo \
+	log2$U.lo log10$U.lo ui_pow$U.lo ui_pow_ui$U.lo minmax$U.lo \
+	dim$U.lo signbit$U.lo copysign$U.lo setsign$U.lo gmp_op$U.lo \
+	init2$U.lo acos$U.lo sin_cos$U.lo set_nan$U.lo set_inf$U.lo \
+	powerof2$U.lo gamma$U.lo set_ld$U.lo get_ld$U.lo cbrt$U.lo \
+	volatile$U.lo fits_sshort$U.lo fits_sint$U.lo fits_slong$U.lo \
+	fits_ushort$U.lo fits_uint$U.lo fits_ulong$U.lo \
+	fits_uintmax$U.lo fits_intmax$U.lo get_si$U.lo get_ui$U.lo \
+	zeta$U.lo cmp_d$U.lo erf$U.lo inits$U.lo inits2$U.lo \
+	clears$U.lo sgn$U.lo check$U.lo sub1sp$U.lo version$U.lo \
+	mpn_exp$U.lo mpfr-gmp$U.lo mp_clz_tab$U.lo sum$U.lo \
+	add1sp$U.lo free_cache$U.lo si_op$U.lo cmp_ld$U.lo \
+	set_ui_2exp$U.lo set_si_2exp$U.lo set_uj$U.lo set_sj$U.lo \
+	get_sj$U.lo get_uj$U.lo get_z$U.lo iszero$U.lo cache$U.lo \
+	sqr$U.lo int_ceil_log2$U.lo isqrt$U.lo strtofr$U.lo pow_z$U.lo \
+	logging$U.lo mulders$U.lo get_f$U.lo round_p$U.lo erfc$U.lo \
+	atan2$U.lo subnormal$U.lo const_catalan$U.lo root$U.lo \
+	sec$U.lo csc$U.lo cot$U.lo eint$U.lo sech$U.lo csch$U.lo \
+	coth$U.lo round_near_x$U.lo constant$U.lo abort_prec_max$U.lo \
+	stack_interface$U.lo lngamma$U.lo zeta_ui$U.lo set_d64$U.lo \
+	get_d64$U.lo jn$U.lo yn$U.lo rem1$U.lo get_patches$U.lo \
+	add_d$U.lo sub_d$U.lo d_sub$U.lo mul_d$U.lo div_d$U.lo \
+	d_div$U.lo li2$U.lo rec_sqrt$U.lo
