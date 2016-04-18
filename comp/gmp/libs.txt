@@ -1,0 +1,7 @@
+./mpn/.libs/libmpn.a
+./.libs/libgmp.a
+./scanf/.libs/libscanf.a
+./mpz/.libs/libmpz.a
+./mpq/.libs/libmpq.a
+./printf/.libs/libprintf.a
+./mpf/.libs/libmpf.a
