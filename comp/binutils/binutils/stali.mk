@@ -26,7 +26,7 @@ OBJS = $(BUOBJS) $(ELFOBJS) $(SIZE_OBJS) $(OBJCOPY_OBJS) $(STRINGS_OBJS) $(READE
 BIN = strings\
 	ranlib\
 	objcopy\
-	nm-new\
+	nm\
 	objdump\
 	cxxfilt\
 	ar\
@@ -34,7 +34,7 @@ BIN = strings\
 	elfedit\
 	readelf\
 	addr2line\
-	strip-new
+	strip
 CLEAN_FILES = config.h
 
 all: options deps $(BIN)
@@ -70,7 +70,7 @@ objcopy: $(OBJCOPY_OBJS)
 	@echo LD $@
 	@$(CC) -o $@ $(OBJCOPY_OBJS) $(LDFLAGS)
 
-nm-new: $(NM_NEW_OBJS)
+nm: $(NM_NEW_OBJS)
 	@echo LD $@
 	@$(CC) -o $@ $(NM_NEW_OBJS) $(LDFLAGS)
 
@@ -102,7 +102,7 @@ addr2line: $(ADDR2LINE_OBJS)
 	@echo LD $@
 	@$(CC) -o $@ $(ADDR2LINE_OBJS) $(LDFLAGS)
 
-strip-new: $(STRIP_NEW_OBJS)
+strip: $(STRIP_NEW_OBJS)
 	@echo LD $@
 	@$(CC) -o $@ $(STRIP_NEW_OBJS) $(LDFLAGS)
 
@@ -115,7 +115,6 @@ install: all
 	@mkdir -p $(DESTDIR)$(PREFIX)/bin
 	@cp -f $(BIN) $(DESTDIR)$(PREFIX)/bin
 	@cd $(DESTDIR)$(PREFIX)/bin && chmod 755 $(BIN)
-	@cd templates && $(MAKE) prefix=$(DESTDIR)$(PREFIX) install
 
 uninstall:
 	@echo removing executable file from $(DESTDIR)$(PREFIX)/bin

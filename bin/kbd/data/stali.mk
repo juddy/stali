@@ -9,8 +9,8 @@ clean:
 install: all
 	mkdir -p $(DESTDIR)$(PREFIX)/share/consolefonts
 	cp -r consolefonts_Z/* $(DESTDIR)$(PREFIX)/share/consolefonts
-	mkdir -p $(DESTDIR)$(PREFIX)/share/partialfonts
-	cp -r partialfonts_Z/* $(DESTDIR)$(PREFIX)/share/partialfonts
+	mkdir -p $(DESTDIR)$(PREFIX)/share/consolefonts/partialfonts
+	cp -r partialfonts_Z/* $(DESTDIR)$(PREFIX)/share/consolefonts/partialfonts
 	mkdir -p $(DESTDIR)$(PREFIX)/share/consoletrans
 	cp -r ./consoletrans/* $(DESTDIR)$(PREFIX)/share/consoletrans
 	mkdir -p $(DESTDIR)$(PREFIX)/share/unimaps

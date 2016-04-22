@@ -2,7 +2,7 @@ ROOT=../../..
 
 include $(ROOT)/config.mk
 
-BIN = ld-new
+BIN = ld
 OBJS= ldmisc.o\
 	eelf_x86_64.o\
 	mri.o\
