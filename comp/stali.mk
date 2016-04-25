@@ -3,6 +3,8 @@ ROOT=..
 SUBDIRS = binutils\
 	gmp\
 	mpfr\
-	musl
+	mpc\
+	musl\
+
 
 include $(ROOT)/mk/dir.mk
