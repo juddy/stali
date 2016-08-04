@@ -9,9 +9,6 @@ SUBDIRS = etc\
 	bin\
 	sys
 
-#to be added after lib
-#	comp\
-
 world: all
 
 include $(ROOT)/mk/dir.mk

@@ -10,6 +10,10 @@ options:
 	@echo CC $< 
 	@$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
 
+.cc.o:
+	@echo CXX $< 
+	@$(CXX) $(CXXFLAGS) $(CPPFLAGS) -c $< -o $@
+
 $(LIB): $(OBJS)
 	@echo AR $@
 	@$(AR) cr $@ $(OBJS)

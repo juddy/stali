@@ -11,6 +11,10 @@ options:
 	@echo CC $< 
 	@$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
 
+.cc.o:
+	@echo CXX $< 
+	@$(CXX) $(CXXFLAGS) $(CPPFLAGS) -c $< -o $@
+
 $(BIN): $(OBJS)
 	@echo LD $@
 	@$(CC) -o $@ $(OBJS) $(LDFLAGS)

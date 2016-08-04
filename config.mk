@@ -8,6 +8,8 @@ MANPREFIX = $(PREFIX)/share/man
 
 M4 = m4
 CC = $(ROOT)/../toolchain/x86_64-linux-musl/bin/x86_64-linux-musl-gcc
+CXX = $(ROOT)/../toolchain/x86_64-linux-musl/bin/x86_64-linux-musl-g++
+AS = $(ROOT)/../toolchain/x86_64-linux-musl/bin/x86_64-linux-musl-as
 LD = $(CC)
 
 YACC = $(ROOT)/bin/hbase/yacc/yacc
@@ -15,7 +17,8 @@ AR = $(ROOT)/../toolchain/x86_64-linux-musl/bin/x86_64-linux-musl-ar
 RANLIB = $(ROOT)/../toolchain/x86_64-linux-musl/bin/x86_64-linux-musl-ranlib
 
 CPPFLAGS = -D_POSIX_SOURCE -D__stali__
-CFLAGS   = -g -I$(ROOT)/../toolchain/x86_64-linux-musl/x86_64-linux-musl/include
+CFLAGS   = -I$(ROOT)/../toolchain/x86_64-linux-musl/x86_64-linux-musl/include
+CXXFLAGS   = -I$(ROOT)/../toolchain/x86_64-linux-musl/x86_64-linux-musl/include
 #-std=c99 -Wall -pedantic
 #LDFLAGS  = -s -static
 LDFLAGS  = -static

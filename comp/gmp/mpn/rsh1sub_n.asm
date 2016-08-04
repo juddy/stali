@@ -1,1 +1,0 @@
-.././mpn/x86_64/rsh1sub_n.asm
