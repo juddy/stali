@@ -2,7 +2,7 @@
 VERSION = 0.0
 
 # paths
-DESTDIR=$(HOME)/rootfs-x86_64
+DESTDIR=$(HOME)/rootfs-arm64
 PREFIX = /
 MANPREFIX = $(PREFIX)/share/man
 
