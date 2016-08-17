@@ -2,7 +2,7 @@ ROOT=../..
 
 include $(ROOT)/config.mk
 
-CPPFLAGS += -DDROPBEAR_CLIENT 
+CPPFLAGS += -DDROPBEAR_CLIENT -D_BSD_SOURCE
 CFLAGS += -I. -Ilibtommath -Ilibtomcrypt/src/headers -I$(ROOT)/lib/zlib
 LDFLAGS += $(ROOT)/lib/zlib/libz.a -lcrypt
 
