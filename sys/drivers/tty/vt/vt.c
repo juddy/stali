@@ -634,7 +634,7 @@ static void set_origin(struct vc_data *vc)
 	vc->vc_pos = vc->vc_origin + vc->vc_size_row * vc->vc_y + 2 * vc->vc_x;
 }
 
-static void save_screen(struct vc_data *vc)
+static inline void save_screen(struct vc_data *vc)
 {
 	WARN_CONSOLE_UNLOCKED();
 
@@ -750,6 +750,7 @@ static void visual_init(struct vc_data *vc, int num, int init)
 	vc->vc_complement_mask = 0;
 	vc->vc_can_do_color = 0;
 	vc->vc_panic_force_write = false;
+	vc->vc_cur_blink_ms = DEFAULT_CURSOR_BLINK_MS;
 	vc->vc_sw->con_init(vc, init);
 	if (!vc->vc_complement_mask)
 		vc->vc_complement_mask = vc->vc_can_do_color ? 0x7700 : 0x0800;
@@ -3583,9 +3584,10 @@ static int do_register_con_driver(const struct consw *csw, int first, int last)
 		goto err;
 
 	desc = csw->con_startup();
-
-	if (!desc)
+	if (!desc) {
+		retval = -ENODEV;
 		goto err;
+	}
 
 	retval = -EINVAL;
 
@@ -4250,7 +4252,6 @@ unsigned short *screen_pos(struct vc_data *vc, int w_offset, int viewed)
 {
 	return screenpos(vc, 2 * w_offset, viewed);
 }
-EXPORT_SYMBOL_GPL(screen_pos);
 
 void getconsxy(struct vc_data *vc, unsigned char *p)
 {

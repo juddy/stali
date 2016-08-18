@@ -28,8 +28,11 @@ static inline struct tegra_bo *host1x_to_tegra_bo(struct host1x_bo *bo)
 static void tegra_bo_put(struct host1x_bo *bo)
 {
 	struct tegra_bo *obj = host1x_to_tegra_bo(bo);
+	struct drm_device *drm = obj->gem.dev;
 
-	drm_gem_object_unreference_unlocked(&obj->gem);
+	mutex_lock(&drm->struct_mutex);
+	drm_gem_object_unreference(&obj->gem);
+	mutex_unlock(&drm->struct_mutex);
 }
 
 static dma_addr_t tegra_bo_pin(struct host1x_bo *bo, struct sg_table **sgt)
@@ -69,8 +72,11 @@ static void tegra_bo_kunmap(struct host1x_bo *bo, unsigned int page,
 static struct host1x_bo *tegra_bo_get(struct host1x_bo *bo)
 {
 	struct tegra_bo *obj = host1x_to_tegra_bo(bo);
+	struct drm_device *drm = obj->gem.dev;
 
+	mutex_lock(&drm->struct_mutex);
 	drm_gem_object_reference(&obj->gem);
+	mutex_unlock(&drm->struct_mutex);
 
 	return bo;
 }
@@ -402,9 +408,12 @@ int tegra_bo_dumb_map_offset(struct drm_file *file, struct drm_device *drm,
 	struct drm_gem_object *gem;
 	struct tegra_bo *bo;
 
+	mutex_lock(&drm->struct_mutex);
+
 	gem = drm_gem_object_lookup(drm, file, handle);
 	if (!gem) {
 		dev_err(drm->dev, "failed to lookup GEM object\n");
+		mutex_unlock(&drm->struct_mutex);
 		return -EINVAL;
 	}
 
@@ -412,7 +421,9 @@ int tegra_bo_dumb_map_offset(struct drm_file *file, struct drm_device *drm,
 
 	*offset = drm_vma_node_offset_addr(&bo->gem.vma_node);
 
-	drm_gem_object_unreference_unlocked(gem);
+	drm_gem_object_unreference(gem);
+
+	mutex_unlock(&drm->struct_mutex);
 
 	return 0;
 }

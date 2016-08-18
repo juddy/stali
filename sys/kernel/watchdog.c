@@ -20,7 +20,6 @@
 #include <linux/smpboot.h>
 #include <linux/sched/rt.h>
 #include <linux/tick.h>
-#include <linux/workqueue.h>
 
 #include <asm/irq_regs.h>
 #include <linux/kvm_para.h>
@@ -226,27 +225,13 @@ static void __touch_watchdog(void)
 	__this_cpu_write(watchdog_touch_ts, get_timestamp());
 }
 
-/**
- * touch_softlockup_watchdog_sched - touch watchdog on scheduler stalls
- *
- * Call when the scheduler may have stalled for legitimate reasons
- * preventing the watchdog task from executing - e.g. the scheduler
- * entering idle state.  This should only be used for scheduler events.
- * Use touch_softlockup_watchdog() for everything else.
- */
-void touch_softlockup_watchdog_sched(void)
+void touch_softlockup_watchdog(void)
 {
 	/*
 	 * Preemption can be enabled.  It doesn't matter which CPU's timestamp
 	 * gets zeroed here, so use the raw_ operation.
 	 */
 	raw_cpu_write(watchdog_touch_ts, 0);
-}
-
-void touch_softlockup_watchdog(void)
-{
-	touch_softlockup_watchdog_sched();
-	wq_watchdog_touch(raw_smp_processor_id());
 }
 EXPORT_SYMBOL(touch_softlockup_watchdog);
 
@@ -261,7 +246,6 @@ void touch_all_softlockup_watchdogs(void)
 	 */
 	for_each_watchdog_cpu(cpu)
 		per_cpu(watchdog_touch_ts, cpu) = 0;
-	wq_watchdog_touch(-1);
 }
 
 #ifdef CONFIG_HARDLOCKUP_DETECTOR
@@ -367,7 +351,7 @@ static void watchdog_overflow_callback(struct perf_event *event,
 			trigger_allbutself_cpu_backtrace();
 
 		if (hardlockup_panic)
-			nmi_panic(regs, "Hard LOCKUP");
+			panic("Hard LOCKUP");
 
 		__this_cpu_write(hard_watchdog_warn, true);
 		return;
@@ -923,6 +907,9 @@ static int proc_watchdog_common(int which, struct ctl_table *table, int write,
 		 * both lockup detectors are disabled if proc_watchdog_update()
 		 * returns an error.
 		 */
+		if (old == new)
+			goto out;
+
 		err = proc_watchdog_update();
 	}
 out:
@@ -967,7 +954,7 @@ int proc_soft_watchdog(struct ctl_table *table, int write,
 int proc_watchdog_thresh(struct ctl_table *table, int write,
 			 void __user *buffer, size_t *lenp, loff_t *ppos)
 {
-	int err, old;
+	int err, old, new;
 
 	get_online_cpus();
 	mutex_lock(&watchdog_proc_mutex);
@@ -987,6 +974,10 @@ int proc_watchdog_thresh(struct ctl_table *table, int write,
 	/*
 	 * Update the sample period. Restore on failure.
 	 */
+	new = ACCESS_ONCE(watchdog_thresh);
+	if (old == new)
+		goto out;
+
 	set_sample_period();
 	err = proc_watchdog_update();
 	if (err) {

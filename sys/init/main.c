@@ -164,10 +164,10 @@ static const char *panic_later, *panic_param;
 
 extern const struct obs_kernel_param __setup_start[], __setup_end[];
 
-static bool __init obsolete_checksetup(char *line)
+static int __init obsolete_checksetup(char *line)
 {
 	const struct obs_kernel_param *p;
-	bool had_early_param = false;
+	int had_early_param = 0;
 
 	p = __setup_start;
 	do {
@@ -179,13 +179,13 @@ static bool __init obsolete_checksetup(char *line)
 				 * Keep iterating, as we can have early
 				 * params and __setups of same names 8( */
 				if (line[n] == '\0' || line[n] == '=')
-					had_early_param = true;
+					had_early_param = 1;
 			} else if (!p->setup_func) {
 				pr_warn("Parameter %s is obsolete, ignored\n",
 					p->str);
-				return true;
+				return 1;
 			} else if (p->setup_func(line + n))
-				return true;
+				return 1;
 		}
 		p++;
 	} while (p < __setup_end);
@@ -942,8 +942,6 @@ static int __ref kernel_init(void *unused)
 	numa_default_policy();
 
 	flush_delayed_fput();
-
-	rcu_end_inkernel_boot();
 
 	if (ramdisk_execute_command) {
 		ret = run_init_process(ramdisk_execute_command);

@@ -49,81 +49,52 @@ static void __crst_table_upgrade(void *arg)
 	__tlb_flush_local();
 }
 
-int crst_table_upgrade(struct mm_struct *mm, unsigned long limit)
+int crst_table_upgrade(struct mm_struct *mm)
 {
 	unsigned long *table, *pgd;
-	unsigned long entry;
-	int flush;
 
-	BUG_ON(limit > TASK_MAX_SIZE);
-	flush = 0;
-repeat:
+	/* upgrade should only happen from 3 to 4 levels */
+	BUG_ON(mm->context.asce_limit != (1UL << 42));
+
 	table = crst_table_alloc(mm);
 	if (!table)
 		return -ENOMEM;
+
 	spin_lock_bh(&mm->page_table_lock);
-	if (mm->context.asce_limit < limit) {
-		pgd = (unsigned long *) mm->pgd;
-		if (mm->context.asce_limit <= (1UL << 31)) {
-			entry = _REGION3_ENTRY_EMPTY;
-			mm->context.asce_limit = 1UL << 42;
-			mm->context.asce_bits = _ASCE_TABLE_LENGTH |
-						_ASCE_USER_BITS |
-						_ASCE_TYPE_REGION3;
-		} else {
-			entry = _REGION2_ENTRY_EMPTY;
-			mm->context.asce_limit = 1UL << 53;
-			mm->context.asce_bits = _ASCE_TABLE_LENGTH |
-						_ASCE_USER_BITS |
-						_ASCE_TYPE_REGION2;
-		}
-		crst_table_init(table, entry);
-		pgd_populate(mm, (pgd_t *) table, (pud_t *) pgd);
-		mm->pgd = (pgd_t *) table;
-		mm->task_size = mm->context.asce_limit;
-		table = NULL;
-		flush = 1;
-	}
+	pgd = (unsigned long *) mm->pgd;
+	crst_table_init(table, _REGION2_ENTRY_EMPTY);
+	pgd_populate(mm, (pgd_t *) table, (pud_t *) pgd);
+	mm->pgd = (pgd_t *) table;
+	mm->context.asce_limit = 1UL << 53;
+	mm->context.asce = __pa(mm->pgd) | _ASCE_TABLE_LENGTH |
+			   _ASCE_USER_BITS | _ASCE_TYPE_REGION2;
+	mm->task_size = mm->context.asce_limit;
 	spin_unlock_bh(&mm->page_table_lock);
-	if (table)
-		crst_table_free(mm, table);
-	if (mm->context.asce_limit < limit)
-		goto repeat;
-	if (flush)
-		on_each_cpu(__crst_table_upgrade, mm, 0);
+
+	on_each_cpu(__crst_table_upgrade, mm, 0);
 	return 0;
 }
 
-void crst_table_downgrade(struct mm_struct *mm, unsigned long limit)
+void crst_table_downgrade(struct mm_struct *mm)
 {
 	pgd_t *pgd;
+
+	/* downgrade should only happen from 3 to 2 levels (compat only) */
+	BUG_ON(mm->context.asce_limit != (1UL << 42));
 
 	if (current->active_mm == mm) {
 		clear_user_asce();
 		__tlb_flush_mm(mm);
 	}
-	while (mm->context.asce_limit > limit) {
-		pgd = mm->pgd;
-		switch (pgd_val(*pgd) & _REGION_ENTRY_TYPE_MASK) {
-		case _REGION_ENTRY_TYPE_R2:
-			mm->context.asce_limit = 1UL << 42;
-			mm->context.asce_bits = _ASCE_TABLE_LENGTH |
-						_ASCE_USER_BITS |
-						_ASCE_TYPE_REGION3;
-			break;
-		case _REGION_ENTRY_TYPE_R3:
-			mm->context.asce_limit = 1UL << 31;
-			mm->context.asce_bits = _ASCE_TABLE_LENGTH |
-						_ASCE_USER_BITS |
-						_ASCE_TYPE_SEGMENT;
-			break;
-		default:
-			BUG();
-		}
-		mm->pgd = (pgd_t *) (pgd_val(*pgd) & _REGION_ENTRY_ORIGIN);
-		mm->task_size = mm->context.asce_limit;
-		crst_table_free(mm, (unsigned long *) pgd);
-	}
+
+	pgd = mm->pgd;
+	mm->pgd = (pgd_t *) (pgd_val(*pgd) & _REGION_ENTRY_ORIGIN);
+	mm->context.asce_limit = 1UL << 31;
+	mm->context.asce = __pa(mm->pgd) | _ASCE_TABLE_LENGTH |
+			   _ASCE_USER_BITS | _ASCE_TYPE_SEGMENT;
+	mm->task_size = mm->context.asce_limit;
+	crst_table_free(mm, (unsigned long *) pgd);
+
 	if (current->active_mm == mm)
 		set_user_asce(mm);
 }
@@ -133,7 +104,7 @@ void crst_table_downgrade(struct mm_struct *mm, unsigned long limit)
 /**
  * gmap_alloc - allocate a guest address space
  * @mm: pointer to the parent mm_struct
- * @limit: maximum address of the gmap address space
+ * @limit: maximum size of the gmap address space
  *
  * Returns a guest address space structure.
  */
@@ -402,7 +373,7 @@ int gmap_map_segment(struct gmap *gmap, unsigned long from,
 	if ((from | to | len) & (PMD_SIZE - 1))
 		return -EINVAL;
 	if (len == 0 || from + len < from || to + len < to ||
-	    from + len - 1 > TASK_MAX_SIZE || to + len - 1 > gmap->asce_end)
+	    from + len > TASK_MAX_SIZE || to + len > gmap->asce_end)
 		return -EINVAL;
 
 	flush = 0;
@@ -578,29 +549,17 @@ int gmap_fault(struct gmap *gmap, unsigned long gaddr,
 {
 	unsigned long vmaddr;
 	int rc;
-	bool unlocked;
 
 	down_read(&gmap->mm->mmap_sem);
-
-retry:
-	unlocked = false;
 	vmaddr = __gmap_translate(gmap, gaddr);
 	if (IS_ERR_VALUE(vmaddr)) {
 		rc = vmaddr;
 		goto out_up;
 	}
-	if (fixup_user_fault(current, gmap->mm, vmaddr, fault_flags,
-			     &unlocked)) {
+	if (fixup_user_fault(current, gmap->mm, vmaddr, fault_flags)) {
 		rc = -EFAULT;
 		goto out_up;
 	}
-	/*
-	 * In the case that fixup_user_fault unlocked the mmap_sem during
-	 * faultin redo __gmap_translate to not race with a map/unmap_segment.
-	 */
-	if (unlocked)
-		goto retry;
-
 	rc = __gmap_link(gmap, gaddr, vmaddr);
 out_up:
 	up_read(&gmap->mm->mmap_sem);
@@ -615,7 +574,10 @@ static void gmap_zap_swap_entry(swp_entry_t entry, struct mm_struct *mm)
 	else if (is_migration_entry(entry)) {
 		struct page *page = migration_entry_to_page(entry);
 
-		dec_mm_counter(mm, mm_counter(page));
+		if (PageAnon(page))
+			dec_mm_counter(mm, MM_ANONPAGES);
+		else
+			dec_mm_counter(mm, MM_FILEPAGES);
 	}
 	free_swap_and_cache(entry);
 }
@@ -726,14 +688,12 @@ int gmap_ipte_notify(struct gmap *gmap, unsigned long gaddr, unsigned long len)
 	spinlock_t *ptl;
 	pte_t *ptep, entry;
 	pgste_t pgste;
-	bool unlocked;
 	int rc = 0;
 
 	if ((gaddr & ~PAGE_MASK) || (len & ~PAGE_MASK))
 		return -EINVAL;
 	down_read(&gmap->mm->mmap_sem);
 	while (len) {
-		unlocked = false;
 		/* Convert gmap address and connect the page tables */
 		addr = __gmap_translate(gmap, gaddr);
 		if (IS_ERR_VALUE(addr)) {
@@ -741,14 +701,10 @@ int gmap_ipte_notify(struct gmap *gmap, unsigned long gaddr, unsigned long len)
 			break;
 		}
 		/* Get the page mapped */
-		if (fixup_user_fault(current, gmap->mm, addr, FAULT_FLAG_WRITE,
-				     &unlocked)) {
+		if (fixup_user_fault(current, gmap->mm, addr, FAULT_FLAG_WRITE)) {
 			rc = -EFAULT;
 			break;
 		}
-		/* While trying to map mmap_sem got unlocked. Let us retry */
-		if (unlocked)
-			continue;
 		rc = __gmap_link(gmap, gaddr, addr);
 		if (rc)
 			break;
@@ -809,11 +765,9 @@ int set_guest_storage_key(struct mm_struct *mm, unsigned long addr,
 	spinlock_t *ptl;
 	pgste_t old, new;
 	pte_t *ptep;
-	bool unlocked;
 
 	down_read(&mm->mmap_sem);
 retry:
-	unlocked = false;
 	ptep = get_locked_pte(mm, addr, &ptl);
 	if (unlikely(!ptep)) {
 		up_read(&mm->mmap_sem);
@@ -822,12 +776,7 @@ retry:
 	if (!(pte_val(*ptep) & _PAGE_INVALID) &&
 	     (pte_val(*ptep) & _PAGE_PROTECT)) {
 		pte_unmap_unlock(ptep, ptl);
-		/*
-		 * We do not really care about unlocked. We will retry either
-		 * way. But this allows fixup_user_fault to enable userfaultfd.
-		 */
-		if (fixup_user_fault(current, mm, addr, FAULT_FLAG_WRITE,
-				     &unlocked)) {
+		if (fixup_user_fault(current, mm, addr, FAULT_FLAG_WRITE)) {
 			up_read(&mm->mmap_sem);
 			return -EFAULT;
 		}
@@ -1328,6 +1277,22 @@ int pmdp_set_access_flags(struct vm_area_struct *vma,
 	pmdp_invalidate(vma, address, pmdp);
 	set_pmd_at(vma->vm_mm, address, pmdp, entry);
 	return 1;
+}
+
+static void pmdp_splitting_flush_sync(void *arg)
+{
+	/* Simply deliver the interrupt */
+}
+
+void pmdp_splitting_flush(struct vm_area_struct *vma, unsigned long address,
+			  pmd_t *pmdp)
+{
+	VM_BUG_ON(address & ~HPAGE_PMD_MASK);
+	if (!test_and_set_bit(_SEGMENT_ENTRY_SPLIT_BIT,
+			      (unsigned long *) pmdp)) {
+		/* need to serialize against gup-fast (IRQ disabled) */
+		smp_call_function(pmdp_splitting_flush_sync, NULL, 1);
+	}
 }
 
 void pgtable_trans_huge_deposit(struct mm_struct *mm, pmd_t *pmdp,

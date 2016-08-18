@@ -90,7 +90,7 @@ config HW_RANDOM_BCM63XX
 
 config HW_RANDOM_BCM2835
 	tristate "Broadcom BCM2835 Random Number Generator support"
-	depends on ARCH_BCM2835
+	depends on ARCH_BCM2835 || ARCH_BCM2708 || ARCH_BCM2709
 	default HW_RANDOM
 	---help---
 	  This driver provides kernel-side support for the Random Number
@@ -372,7 +372,6 @@ config HW_RANDOM_XGENE
 config HW_RANDOM_STM32
 	tristate "STMicroelectronics STM32 random number generator"
 	depends on HW_RANDOM && (ARCH_STM32 || COMPILE_TEST)
-	depends on HAS_IOMEM
 	help
 	  This driver provides kernel-side support for the Random Number
 	  Generator hardware found on STM32 microcontrollers.

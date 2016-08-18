@@ -60,7 +60,6 @@ clean-files += cpustr.h
 KBUILD_CFLAGS	:= $(USERINCLUDE) $(REALMODE_CFLAGS) -D_SETUP
 KBUILD_AFLAGS	:= $(KBUILD_CFLAGS) -D__ASSEMBLY__
 GCOV_PROFILE := n
-UBSAN_SANITIZE := n
 
 $(obj)/bzImage: asflags-y  := $(SVGA_MODE)
 
@@ -163,6 +162,9 @@ isoimage: $(obj)/bzImage
 	for i in lib lib64 share end ; do \
 		if [ -f /usr/$$i/syslinux/isolinux.bin ] ; then \
 			cp /usr/$$i/syslinux/isolinux.bin $(obj)/isoimage ; \
+			if [ -f /usr/$$i/syslinux/ldlinux.c32 ]; then \
+				cp /usr/$$i/syslinux/ldlinux.c32 $(obj)/isoimage ; \
+			fi ; \
 			break ; \
 		fi ; \
 		if [ $$i = end ] ; then exit 1 ; fi ; \

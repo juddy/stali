@@ -807,7 +807,7 @@ int ocfs2_remove_refcount_tree(struct inode *inode, struct buffer_head *di_bh)
 			mlog_errno(ret);
 			goto out;
 		}
-		inode_lock(alloc_inode);
+		mutex_lock(&alloc_inode->i_mutex);
 
 		ret = ocfs2_inode_lock(alloc_inode, &alloc_bh, 1);
 		if (ret) {
@@ -867,7 +867,7 @@ out_unlock:
 	}
 out_mutex:
 	if (alloc_inode) {
-		inode_unlock(alloc_inode);
+		mutex_unlock(&alloc_inode->i_mutex);
 		iput(alloc_inode);
 	}
 out:
@@ -4197,7 +4197,7 @@ static int __ocfs2_reflink(struct dentry *old_dentry,
 		goto out;
 	}
 
-	inode_lock_nested(new_inode, I_MUTEX_CHILD);
+	mutex_lock_nested(&new_inode->i_mutex, I_MUTEX_CHILD);
 	ret = ocfs2_inode_lock_nested(new_inode, &new_bh, 1,
 				      OI_LS_REFLINK_TARGET);
 	if (ret) {
@@ -4231,7 +4231,7 @@ inode_unlock:
 	ocfs2_inode_unlock(new_inode, 1);
 	brelse(new_bh);
 out_unlock:
-	inode_unlock(new_inode);
+	mutex_unlock(&new_inode->i_mutex);
 out:
 	if (!ret) {
 		ret = filemap_fdatawait(inode->i_mapping);
@@ -4248,20 +4248,12 @@ static int ocfs2_reflink(struct dentry *old_dentry, struct inode *dir,
 	struct inode *inode = d_inode(old_dentry);
 	struct buffer_head *old_bh = NULL;
 	struct inode *new_orphan_inode = NULL;
-	struct posix_acl *default_acl, *acl;
-	umode_t mode;
 
 	if (!ocfs2_refcount_tree(OCFS2_SB(inode->i_sb)))
 		return -EOPNOTSUPP;
 
-	mode = inode->i_mode;
-	error = posix_acl_create(dir, &mode, &default_acl, &acl);
-	if (error) {
-		mlog_errno(error);
-		return error;
-	}
 
-	error = ocfs2_create_inode_in_orphan(dir, mode,
+	error = ocfs2_create_inode_in_orphan(dir, inode->i_mode,
 					     &new_orphan_inode);
 	if (error) {
 		mlog_errno(error);
@@ -4300,16 +4292,11 @@ static int ocfs2_reflink(struct dentry *old_dentry, struct inode *dir,
 	/* If the security isn't preserved, we need to re-initialize them. */
 	if (!preserve) {
 		error = ocfs2_init_security_and_acl(dir, new_orphan_inode,
-						    &new_dentry->d_name,
-						    default_acl, acl);
+						    &new_dentry->d_name);
 		if (error)
 			mlog_errno(error);
 	}
 out:
-	if (default_acl)
-		posix_acl_release(default_acl);
-	if (acl)
-		posix_acl_release(acl);
 	if (!error) {
 		error = ocfs2_mv_orphaned_inode_to_new(dir, new_orphan_inode,
 						       new_dentry);
@@ -4402,11 +4389,11 @@ static int ocfs2_vfs_reflink(struct dentry *old_dentry, struct inode *dir,
 			return error;
 	}
 
-	inode_lock(inode);
+	mutex_lock(&inode->i_mutex);
 	error = dquot_initialize(dir);
 	if (!error)
 		error = ocfs2_reflink(old_dentry, dir, new_dentry, preserve);
-	inode_unlock(inode);
+	mutex_unlock(&inode->i_mutex);
 	if (!error)
 		fsnotify_create(dir, new_dentry);
 	return error;

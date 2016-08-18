@@ -74,7 +74,7 @@ int v9fs_file_open(struct inode *inode, struct file *file)
 					v9fs_proto_dotu(v9ses));
 	fid = file->private_data;
 	if (!fid) {
-		fid = v9fs_fid_clone(file->f_path.dentry);
+		fid = v9fs_fid_clone(file_dentry(file));
 		if (IS_ERR(fid))
 			return PTR_ERR(fid);
 
@@ -100,7 +100,7 @@ int v9fs_file_open(struct inode *inode, struct file *file)
 		 * because we want write after unlink usecase
 		 * to work.
 		 */
-		fid = v9fs_writeback_fid(file->f_path.dentry);
+		fid = v9fs_writeback_fid(file_dentry(file));
 		if (IS_ERR(fid)) {
 			err = PTR_ERR(fid);
 			mutex_unlock(&v9inode->v_mutex);
@@ -449,14 +449,14 @@ static int v9fs_file_fsync(struct file *filp, loff_t start, loff_t end,
 	if (retval)
 		return retval;
 
-	inode_lock(inode);
+	mutex_lock(&inode->i_mutex);
 	p9_debug(P9_DEBUG_VFS, "filp %p datasync %x\n", filp, datasync);
 
 	fid = filp->private_data;
 	v9fs_blank_wstat(&wstat);
 
 	retval = p9_client_wstat(fid, &wstat);
-	inode_unlock(inode);
+	mutex_unlock(&inode->i_mutex);
 
 	return retval;
 }
@@ -472,13 +472,13 @@ int v9fs_file_fsync_dotl(struct file *filp, loff_t start, loff_t end,
 	if (retval)
 		return retval;
 
-	inode_lock(inode);
+	mutex_lock(&inode->i_mutex);
 	p9_debug(P9_DEBUG_VFS, "filp %p datasync %x\n", filp, datasync);
 
 	fid = filp->private_data;
 
 	retval = p9_client_fsync(fid, datasync);
-	inode_unlock(inode);
+	mutex_unlock(&inode->i_mutex);
 
 	return retval;
 }
@@ -516,7 +516,7 @@ v9fs_mmap_file_mmap(struct file *filp, struct vm_area_struct *vma)
 		 * because we want write after unlink usecase
 		 * to work.
 		 */
-		fid = v9fs_writeback_fid(filp->f_path.dentry);
+		fid = v9fs_writeback_fid(file_dentry(filp));
 		if (IS_ERR(fid)) {
 			retval = PTR_ERR(fid);
 			mutex_unlock(&v9inode->v_mutex);

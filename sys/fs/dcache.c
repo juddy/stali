@@ -1560,8 +1560,7 @@ struct dentry *__d_alloc(struct super_block *sb, const struct qstr *name)
 	dentry->d_iname[DNAME_INLINE_LEN-1] = 0;
 	if (name->len > DNAME_INLINE_LEN-1) {
 		size_t size = offsetof(struct external_name, name[1]);
-		struct external_name *p = kmalloc(size + name->len,
-						  GFP_KERNEL_ACCOUNT);
+		struct external_name *p = kmalloc(size + name->len, GFP_KERNEL);
 		if (!p) {
 			kmem_cache_free(dentry_cache, dentry); 
 			return NULL;
@@ -1619,7 +1618,7 @@ struct dentry *d_alloc(struct dentry * parent, const struct qstr *name)
 	struct dentry *dentry = __d_alloc(parent->d_sb, name);
 	if (!dentry)
 		return NULL;
-
+	dentry->d_flags |= DCACHE_RCUACCESS;
 	spin_lock(&parent->d_lock);
 	/*
 	 * don't need child lock because it is not subject
@@ -1667,7 +1666,8 @@ void d_set_d_op(struct dentry *dentry, const struct dentry_operations *op)
 				DCACHE_OP_REVALIDATE	|
 				DCACHE_OP_WEAK_REVALIDATE	|
 				DCACHE_OP_DELETE	|
-				DCACHE_OP_SELECT_INODE));
+				DCACHE_OP_SELECT_INODE	|
+				DCACHE_OP_REAL));
 	dentry->d_op = op;
 	if (!op)
 		return;
@@ -1685,6 +1685,8 @@ void d_set_d_op(struct dentry *dentry, const struct dentry_operations *op)
 		dentry->d_flags |= DCACHE_OP_PRUNE;
 	if (op->d_select_inode)
 		dentry->d_flags |= DCACHE_OP_SELECT_INODE;
+	if (op->d_real)
+		dentry->d_flags |= DCACHE_OP_REAL;
 
 }
 EXPORT_SYMBOL(d_set_d_op);
@@ -1724,7 +1726,7 @@ static unsigned d_flags_for_inode(struct inode *inode)
 	}
 
 	if (unlikely(!(inode->i_opflags & IOP_NOFOLLOW))) {
-		if (unlikely(inode->i_op->get_link)) {
+		if (unlikely(inode->i_op->follow_link)) {
 			add_flags = DCACHE_SYMLINK_TYPE;
 			goto type_determined;
 		}
@@ -2411,7 +2413,6 @@ static void __d_rehash(struct dentry * entry, struct hlist_bl_head *b)
 {
 	BUG_ON(!d_unhashed(entry));
 	hlist_bl_lock(b);
-	entry->d_flags |= DCACHE_RCUACCESS;
 	hlist_bl_add_head_rcu(&entry->d_hash, b);
 	hlist_bl_unlock(b);
 }
@@ -2452,7 +2453,7 @@ EXPORT_SYMBOL(d_rehash);
  */
 void dentry_update_name_case(struct dentry *dentry, struct qstr *name)
 {
-	BUG_ON(!inode_is_locked(dentry->d_parent->d_inode));
+	BUG_ON(!mutex_is_locked(&dentry->d_parent->d_inode->i_mutex));
 	BUG_ON(dentry->d_name.len != name->len); /* d_lookup gives this */
 
 	spin_lock(&dentry->d_lock);
@@ -2630,6 +2631,7 @@ static void __d_move(struct dentry *dentry, struct dentry *target,
 	/* ... and switch them in the tree */
 	if (IS_ROOT(dentry)) {
 		/* splicing a tree */
+		dentry->d_flags |= DCACHE_RCUACCESS;
 		dentry->d_parent = target->d_parent;
 		target->d_parent = target;
 		list_del_init(&target->d_child);
@@ -2728,7 +2730,7 @@ static int __d_unalias(struct inode *inode,
 	if (!mutex_trylock(&dentry->d_sb->s_vfs_rename_mutex))
 		goto out_err;
 	m1 = &dentry->d_sb->s_vfs_rename_mutex;
-	if (!inode_trylock(alias->d_parent->d_inode))
+	if (!mutex_trylock(&alias->d_parent->d_inode->i_mutex))
 		goto out_err;
 	m2 = &alias->d_parent->d_inode->i_mutex;
 out_unalias:
@@ -3294,18 +3296,18 @@ out:
  * @new_dentry: new dentry
  * @old_dentry: old dentry
  *
- * Returns true if new_dentry is a subdirectory of the parent (at any depth).
- * Returns false otherwise.
+ * Returns 1 if new_dentry is a subdirectory of the parent (at any depth).
+ * Returns 0 otherwise.
  * Caller must ensure that "new_dentry" is pinned before calling is_subdir()
  */
   
-bool is_subdir(struct dentry *new_dentry, struct dentry *old_dentry)
+int is_subdir(struct dentry *new_dentry, struct dentry *old_dentry)
 {
-	bool result;
+	int result;
 	unsigned seq;
 
 	if (new_dentry == old_dentry)
-		return true;
+		return 1;
 
 	do {
 		/* for restarting inner loop in case of seq retry */
@@ -3316,9 +3318,9 @@ bool is_subdir(struct dentry *new_dentry, struct dentry *old_dentry)
 		 */
 		rcu_read_lock();
 		if (d_ancestor(old_dentry, new_dentry))
-			result = true;
+			result = 1;
 		else
-			result = false;
+			result = 0;
 		rcu_read_unlock();
 	} while (read_seqretry(&rename_lock, seq));
 
@@ -3406,7 +3408,7 @@ static void __init dcache_init(void)
 	 * of the dcache. 
 	 */
 	dentry_cache = KMEM_CACHE(dentry,
-		SLAB_RECLAIM_ACCOUNT|SLAB_PANIC|SLAB_MEM_SPREAD|SLAB_ACCOUNT);
+		SLAB_RECLAIM_ACCOUNT|SLAB_PANIC|SLAB_MEM_SPREAD);
 
 	/* Hash may have been set up in dcache_init_early */
 	if (!hashdist)

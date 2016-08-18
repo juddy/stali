@@ -27,7 +27,6 @@ $(warning LSE atomics not supported by binutils)
 endif
 
 KBUILD_CFLAGS	+= -mgeneral-regs-only $(lseinstr)
-KBUILD_CFLAGS	+= -fno-asynchronous-unwind-tables
 KBUILD_CFLAGS	+= $(call cc-option, -mpc-relative-literal-loads)
 KBUILD_AFLAGS	+= $(lseinstr)
 
@@ -88,7 +87,7 @@ Image: vmlinux
 Image.%: vmlinux
 	$(Q)$(MAKE) $(build)=$(boot) $(boot)/$@
 
-zinstall install:
+zinstall install: vmlinux
 	$(Q)$(MAKE) $(build)=$(boot) $@
 
 %.dtb: scripts

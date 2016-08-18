@@ -508,7 +508,7 @@ int vmw_kms_readback(struct vmw_private *dev_priv,
 }
 
 
-static const struct drm_framebuffer_funcs vmw_framebuffer_surface_funcs = {
+static struct drm_framebuffer_funcs vmw_framebuffer_surface_funcs = {
 	.destroy = vmw_framebuffer_surface_destroy,
 	.dirty = vmw_framebuffer_surface_dirty,
 };
@@ -685,7 +685,7 @@ static int vmw_framebuffer_dmabuf_dirty(struct drm_framebuffer *framebuffer,
 	return ret;
 }
 
-static const struct drm_framebuffer_funcs vmw_framebuffer_dmabuf_funcs = {
+static struct drm_framebuffer_funcs vmw_framebuffer_dmabuf_funcs = {
 	.destroy = vmw_framebuffer_dmabuf_destroy,
 	.dirty = vmw_framebuffer_dmabuf_dirty,
 };
@@ -972,7 +972,7 @@ vmw_kms_new_framebuffer(struct vmw_private *dev_priv,
 
 static struct drm_framebuffer *vmw_kms_fb_create(struct drm_device *dev,
 						 struct drm_file *file_priv,
-						 const struct drm_mode_fb_cmd2 *mode_cmd2)
+						 struct drm_mode_fb_cmd2 *mode_cmd2)
 {
 	struct vmw_private *dev_priv = vmw_priv(dev);
 	struct ttm_object_file *tfile = vmw_fpriv(file_priv)->tfile;
@@ -1373,6 +1373,14 @@ static int vmw_du_update_layout(struct vmw_private *dev_priv, unsigned num,
 	return 0;
 }
 
+void vmw_du_crtc_save(struct drm_crtc *crtc)
+{
+}
+
+void vmw_du_crtc_restore(struct drm_crtc *crtc)
+{
+}
+
 void vmw_du_crtc_gamma_set(struct drm_crtc *crtc,
 			   u16 *r, u16 *g, u16 *b,
 			   uint32_t start, uint32_t size)
@@ -1392,6 +1400,14 @@ void vmw_du_crtc_gamma_set(struct drm_crtc *crtc,
 int vmw_du_connector_dpms(struct drm_connector *connector, int mode)
 {
 	return 0;
+}
+
+void vmw_du_connector_save(struct drm_connector *connector)
+{
+}
+
+void vmw_du_connector_restore(struct drm_connector *connector)
+{
 }
 
 enum drm_connector_status
@@ -1522,14 +1538,10 @@ int vmw_du_connector_fill_modes(struct drm_connector *connector,
 		DRM_MODE_FLAG_NHSYNC | DRM_MODE_FLAG_PVSYNC)
 	};
 	int i;
-	u32 assumed_bpp = 2;
+	u32 assumed_bpp = 4;
 
-	/*
-	 * If using screen objects, then assume 32-bpp because that's what the
-	 * SVGA device is assuming
-	 */
-	if (dev_priv->active_display_unit == vmw_du_screen_object)
-		assumed_bpp = 4;
+	if (dev_priv->assume_16bpp)
+		assumed_bpp = 2;
 
 	if (dev_priv->active_display_unit == vmw_du_screen_target) {
 		max_width  = min(max_width,  dev_priv->stdu_max_width);
@@ -1580,7 +1592,7 @@ int vmw_du_connector_fill_modes(struct drm_connector *connector,
 		drm_mode_probed_add(connector, mode);
 	}
 
-	drm_mode_connector_list_update(connector);
+	drm_mode_connector_list_update(connector, true);
 	/* Move the prefered mode first, help apps pick the right mode. */
 	drm_mode_sort(&connector->modes);
 

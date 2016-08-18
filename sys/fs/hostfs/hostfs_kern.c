@@ -223,7 +223,7 @@ static struct inode *hostfs_alloc_inode(struct super_block *sb)
 {
 	struct hostfs_inode_info *hi;
 
-	hi = kmalloc(sizeof(*hi), GFP_KERNEL_ACCOUNT);
+	hi = kmalloc(sizeof(*hi), GFP_KERNEL);
 	if (hi == NULL)
 		return NULL;
 	hi->fd = -1;
@@ -378,9 +378,9 @@ static int hostfs_fsync(struct file *file, loff_t start, loff_t end,
 	if (ret)
 		return ret;
 
-	inode_lock(inode);
+	mutex_lock(&inode->i_mutex);
 	ret = fsync_file(HOSTFS_I(inode)->fd, datasync);
-	inode_unlock(inode);
+	mutex_unlock(&inode->i_mutex);
 
 	return ret;
 }
@@ -890,14 +890,9 @@ static const struct inode_operations hostfs_dir_iops = {
 	.setattr	= hostfs_setattr,
 };
 
-static const char *hostfs_get_link(struct dentry *dentry,
-				   struct inode *inode,
-				   struct delayed_call *done)
+static const char *hostfs_follow_link(struct dentry *dentry, void **cookie)
 {
-	char *link;
-	if (!dentry)
-		return ERR_PTR(-ECHILD);
-	link = kmalloc(PATH_MAX, GFP_KERNEL);
+	char *link = __getname();
 	if (link) {
 		char *path = dentry_name(dentry);
 		int err = -ENOMEM;
@@ -908,20 +903,25 @@ static const char *hostfs_get_link(struct dentry *dentry,
 			__putname(path);
 		}
 		if (err < 0) {
-			kfree(link);
+			__putname(link);
 			return ERR_PTR(err);
 		}
 	} else {
 		return ERR_PTR(-ENOMEM);
 	}
 
-	set_delayed_call(done, kfree_link, link);
-	return link;
+	return *cookie = link;
+}
+
+static void hostfs_put_link(struct inode *unused, void *cookie)
+{
+	__putname(cookie);
 }
 
 static const struct inode_operations hostfs_link_iops = {
 	.readlink	= generic_readlink,
-	.get_link	= hostfs_get_link,
+	.follow_link	= hostfs_follow_link,
+	.put_link	= hostfs_put_link,
 };
 
 static int hostfs_fill_sb_common(struct super_block *sb, void *d, int silent)

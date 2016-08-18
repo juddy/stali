@@ -32,7 +32,8 @@ static inline void __user *get_trap_ip(struct pt_regs *regs)
 		address = *(unsigned long *)(current->thread.trap_tdb + 24);
 	else
 		address = regs->psw.addr;
-	return (void __user *) (address - (regs->int_code >> 16));
+	return (void __user *)
+		((address - (regs->int_code >> 16)) & PSW_ADDR_INSN);
 }
 
 static inline void report_user_fault(struct pt_regs *regs, int signr)
@@ -45,7 +46,7 @@ static inline void report_user_fault(struct pt_regs *regs, int signr)
 		return;
 	printk("User process fault: interruption code %04x ilc:%d ",
 	       regs->int_code & 0xffff, regs->int_code >> 17);
-	print_vma_addr("in ", regs->psw.addr);
+	print_vma_addr("in ", regs->psw.addr & PSW_ADDR_INSN);
 	printk("\n");
 	show_regs(regs);
 }
@@ -68,13 +69,13 @@ void do_report_trap(struct pt_regs *regs, int si_signo, int si_code, char *str)
 		report_user_fault(regs, si_signo);
         } else {
                 const struct exception_table_entry *fixup;
-		fixup = search_exception_tables(regs->psw.addr);
+                fixup = search_exception_tables(regs->psw.addr & PSW_ADDR_INSN);
                 if (fixup)
-			regs->psw.addr = extable_fixup(fixup);
+			regs->psw.addr = extable_fixup(fixup) | PSW_ADDR_AMODE;
 		else {
 			enum bug_trap_type btt;
 
-			btt = report_bug(regs->psw.addr, regs);
+			btt = report_bug(regs->psw.addr & PSW_ADDR_INSN, regs);
 			if (btt == BUG_TRAP_TYPE_WARN)
 				return;
 			die(regs, str);
@@ -259,7 +260,10 @@ void vector_exception(struct pt_regs *regs)
 
 void data_exception(struct pt_regs *regs)
 {
+	__u16 __user *location;
 	int signal = 0;
+
+	location = get_trap_ip(regs);
 
 	save_fpu_regs();
 	if (current->thread.fpu.fpc & FPC_DXC_MASK)

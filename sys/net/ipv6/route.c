@@ -62,7 +62,6 @@
 #include <net/lwtunnel.h>
 #include <net/ip_tunnels.h>
 #include <net/l3mdev.h>
-#include <trace/events/fib6.h>
 
 #include <asm/uaccess.h>
 
@@ -866,9 +865,6 @@ restart:
 	}
 	dst_use(&rt->dst, jiffies);
 	read_unlock_bh(&table->tb6_lock);
-
-	trace_fib6_table_lookup(net, rt, table->tb6_id, fl6);
-
 	return rt;
 
 }
@@ -1082,8 +1078,6 @@ redo_rt6_select:
 		read_unlock_bh(&table->tb6_lock);
 
 		rt6_dst_from_metrics_check(rt);
-
-		trace_fib6_table_lookup(net, rt, table->tb6_id, fl6);
 		return rt;
 	} else if (unlikely((fl6->flowi6_flags & FLOWI_FLAG_KNOWN_NH) &&
 			    !(rt->rt6i_flags & RTF_GATEWAY))) {
@@ -1107,8 +1101,6 @@ redo_rt6_select:
 			uncached_rt = net->ipv6.ip6_null_entry;
 
 		dst_hold(&uncached_rt->dst);
-
-		trace_fib6_table_lookup(net, uncached_rt, table->tb6_id, fl6);
 		return uncached_rt;
 
 	} else {
@@ -1133,7 +1125,6 @@ redo_rt6_select:
 			dst_release(&rt->dst);
 		}
 
-		trace_fib6_table_lookup(net, pcpu_rt, table->tb6_id, fl6);
 		return pcpu_rt;
 
 	}
@@ -1482,7 +1473,6 @@ out:
 
 	read_unlock_bh(&table->tb6_lock);
 
-	trace_fib6_table_lookup(net, rt, table->tb6_id, fl6);
 	return rt;
 };
 
@@ -1737,6 +1727,8 @@ static int ip6_convert_metrics(struct mx6_config *mxc,
 		} else {
 			val = nla_get_u32(nla);
 		}
+		if (type == RTAX_HOPLIMIT && val > 255)
+			val = 255;
 		if (type == RTAX_FEATURES && (val & ~RTAX_FEATURE_MASK))
 			goto err;
 
@@ -2708,7 +2700,6 @@ static const struct nla_policy rtm_ipv6_policy[RTA_MAX+1] = {
 	[RTA_PREF]              = { .type = NLA_U8 },
 	[RTA_ENCAP_TYPE]	= { .type = NLA_U16 },
 	[RTA_ENCAP]		= { .type = NLA_NESTED },
-	[RTA_EXPIRES]		= { .type = NLA_U32 },
 };
 
 static int rtm_to_fib6_config(struct sk_buff *skb, struct nlmsghdr *nlh,
@@ -2808,15 +2799,6 @@ static int rtm_to_fib6_config(struct sk_buff *skb, struct nlmsghdr *nlh,
 
 	if (tb[RTA_ENCAP_TYPE])
 		cfg->fc_encap_type = nla_get_u16(tb[RTA_ENCAP_TYPE]);
-
-	if (tb[RTA_EXPIRES]) {
-		unsigned long timeout = addrconf_timeout_fixup(nla_get_u32(tb[RTA_EXPIRES]), HZ);
-
-		if (addrconf_finite_timeout(timeout)) {
-			cfg->fc_expires = jiffies_to_clock_t(timeout * HZ);
-			cfg->fc_flags |= RTF_EXPIRES;
-		}
-	}
 
 	err = 0;
 errout:

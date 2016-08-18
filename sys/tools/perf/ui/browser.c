@@ -528,7 +528,7 @@ static struct ui_browser_colorset {
 		.colorset = HE_COLORSET_SELECTED,
 		.name	  = "selected",
 		.fg	  = "black",
-		.bg	  = "yellow",
+		.bg	  = "lightgray",
 	},
 	{
 		.colorset = HE_COLORSET_CODE,

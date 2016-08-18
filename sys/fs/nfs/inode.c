@@ -71,24 +71,18 @@ nfs_fattr_to_ino_t(struct nfs_fattr *fattr)
 	return nfs_fileid_to_ino_t(fattr->fileid);
 }
 
-static int nfs_wait_killable(int mode)
+/**
+ * nfs_wait_bit_killable - helper for functions that are sleeping on bit locks
+ * @word: long word containing the bit lock
+ */
+int nfs_wait_bit_killable(struct wait_bit_key *key, int mode)
 {
 	freezable_schedule_unsafe();
 	if (signal_pending_state(mode, current))
 		return -ERESTARTSYS;
 	return 0;
 }
-
-int nfs_wait_bit_killable(struct wait_bit_key *key, int mode)
-{
-	return nfs_wait_killable(mode);
-}
 EXPORT_SYMBOL_GPL(nfs_wait_bit_killable);
-
-int nfs_wait_atomic_killable(atomic_t *p)
-{
-	return nfs_wait_killable(TASK_KILLABLE);
-}
 
 /**
  * nfs_compat_user_ino64 - returns the user-visible inode number
@@ -414,10 +408,9 @@ nfs_fhget(struct super_block *sb, struct nfs_fh *fh, struct nfs_fattr *fattr, st
 				inode->i_fop = NULL;
 				inode->i_flags |= S_AUTOMOUNT;
 			}
-		} else if (S_ISLNK(inode->i_mode)) {
+		} else if (S_ISLNK(inode->i_mode))
 			inode->i_op = &nfs_symlink_inode_operations;
-			inode_nohighmem(inode);
-		} else
+		else
 			init_special_inode(inode, inode->i_mode, fattr->rdev);
 
 		memset(&inode->i_atime, 0, sizeof(inode->i_atime));
@@ -661,9 +654,9 @@ int nfs_getattr(struct vfsmount *mnt, struct dentry *dentry, struct kstat *stat)
 	trace_nfs_getattr_enter(inode);
 	/* Flush out writes to the server in order to update c/mtime.  */
 	if (S_ISREG(inode->i_mode)) {
-		inode_lock(inode);
+		mutex_lock(&inode->i_mutex);
 		err = nfs_sync_inode(inode);
-		inode_unlock(inode);
+		mutex_unlock(&inode->i_mutex);
 		if (err)
 			goto out;
 	}
@@ -706,7 +699,7 @@ static void nfs_init_lock_context(struct nfs_lock_context *l_ctx)
 	l_ctx->lockowner.l_owner = current->files;
 	l_ctx->lockowner.l_pid = current->tgid;
 	INIT_LIST_HEAD(&l_ctx->list);
-	atomic_set(&l_ctx->io_count, 0);
+	nfs_iocounter_init(&l_ctx->io_count);
 }
 
 static struct nfs_lock_context *__nfs_find_lock_context(struct nfs_open_context *ctx)
@@ -919,12 +912,6 @@ void nfs_file_clear_open_context(struct file *filp)
 	if (ctx) {
 		struct inode *inode = d_inode(ctx->dentry);
 
-		/*
-		 * We fatal error on write before. Try to writeback
-		 * every page again.
-		 */
-		if (ctx->error < 0)
-			invalidate_inode_pages2(inode->i_mapping);
 		filp->private_data = NULL;
 		spin_lock(&inode->i_lock);
 		list_move_tail(&ctx->list, &NFS_I(inode)->open_files);
@@ -940,7 +927,7 @@ int nfs_open(struct inode *inode, struct file *filp)
 {
 	struct nfs_open_context *ctx;
 
-	ctx = alloc_nfs_open_context(filp->f_path.dentry, filp->f_mode);
+	ctx = alloc_nfs_open_context(file_dentry(filp), filp->f_mode);
 	if (IS_ERR(ctx))
 		return PTR_ERR(ctx);
 	nfs_file_set_open_context(filp, ctx);
@@ -1099,27 +1086,6 @@ static bool nfs_mapping_need_revalidate_inode(struct inode *inode)
 		|| NFS_STALE(inode);
 }
 
-int nfs_revalidate_mapping_rcu(struct inode *inode)
-{
-	struct nfs_inode *nfsi = NFS_I(inode);
-	unsigned long *bitlock = &nfsi->flags;
-	int ret = 0;
-
-	if (IS_SWAPFILE(inode))
-		goto out;
-	if (nfs_mapping_need_revalidate_inode(inode)) {
-		ret = -ECHILD;
-		goto out;
-	}
-	spin_lock(&inode->i_lock);
-	if (test_bit(NFS_INO_INVALIDATING, bitlock) ||
-	    (nfsi->cache_validity & NFS_INO_INVALID_DATA))
-		ret = -ECHILD;
-	spin_unlock(&inode->i_lock);
-out:
-	return ret;
-}
-
 /**
  * __nfs_revalidate_mapping - Revalidate the pagecache
  * @inode - pointer to host inode
@@ -1178,9 +1144,9 @@ static int __nfs_revalidate_mapping(struct inode *inode,
 	spin_unlock(&inode->i_lock);
 	trace_nfs_invalidate_mapping_enter(inode);
 	if (may_lock) {
-		inode_lock(inode);
+		mutex_lock(&inode->i_mutex);
 		ret = nfs_invalidate_mapping(inode, mapping);
-		inode_unlock(inode);
+		mutex_unlock(&inode->i_mutex);
 	} else
 		ret = nfs_invalidate_mapping(inode, mapping);
 	trace_nfs_invalidate_mapping_exit(inode, ret);
@@ -1969,7 +1935,7 @@ static int __init nfs_init_inodecache(void)
 	nfs_inode_cachep = kmem_cache_create("nfs_inode_cache",
 					     sizeof(struct nfs_inode),
 					     0, (SLAB_RECLAIM_ACCOUNT|
-						SLAB_MEM_SPREAD|SLAB_ACCOUNT),
+						SLAB_MEM_SPREAD),
 					     init_once);
 	if (nfs_inode_cachep == NULL)
 		return -ENOMEM;

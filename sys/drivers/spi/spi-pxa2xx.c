@@ -111,7 +111,7 @@ static const struct lpss_config lpss_platforms[] = {
 		.reg_general = -1,
 		.reg_ssp = 0x20,
 		.reg_cs_ctrl = 0x24,
-		.reg_capabilities = 0xfc,
+		.reg_capabilities = -1,
 		.rx_threshold = 1,
 		.tx_threshold_lo = 32,
 		.tx_threshold_hi = 56,
@@ -1566,6 +1566,9 @@ static int pxa2xx_spi_probe(struct platform_device *pdev)
 
 	if (!is_quark_x1000_ssp(drv_data))
 		pxa2xx_spi_write(drv_data, SSPSP, 0);
+
+	if (is_lpss_ssp(drv_data))
+		lpss_ssp_setup(drv_data);
 
 	if (is_lpss_ssp(drv_data)) {
 		lpss_ssp_setup(drv_data);

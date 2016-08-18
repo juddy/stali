@@ -68,7 +68,6 @@
 #include <linux/slab.h>
 #include "xhci.h"
 #include "xhci-trace.h"
-#include "xhci-mtk.h"
 
 /*
  * Returns zero if the TRB isn't in this segment, otherwise it returns the DMA
@@ -290,6 +289,14 @@ static int xhci_abort_cmd_ring(struct xhci_hcd *xhci)
 
 	temp_64 = xhci_read_64(xhci, &xhci->op_regs->cmd_ring);
 	xhci->cmd_ring_state = CMD_RING_STATE_ABORTED;
+
+	/*
+	 * Writing the CMD_RING_ABORT bit should cause a cmd completion event,
+	 * however on some host hw the CMD_RING_RUNNING bit is correctly cleared
+	 * but the completion event in never sent. Use the cmd timeout timer to
+	 * handle those cases. Use twice the time to cover the bit polling retry
+	 */
+	mod_timer(&xhci->cmd_timer, jiffies + (2 * XHCI_CMD_DEFAULT_TIMEOUT));
 	xhci_write_64(xhci, temp_64 | CMD_RING_ABORT,
 			&xhci->op_regs->cmd_ring);
 
@@ -314,6 +321,7 @@ static int xhci_abort_cmd_ring(struct xhci_hcd *xhci)
 
 		xhci_err(xhci, "Stopped the command ring failed, "
 				"maybe the host is dead\n");
+		del_timer(&xhci->cmd_timer);
 		xhci->xhc_state |= XHCI_STATE_DYING;
 		xhci_quiesce(xhci);
 		xhci_halt(xhci);
@@ -1253,22 +1261,21 @@ void xhci_handle_command_timeout(unsigned long data)
 	int ret;
 	unsigned long flags;
 	u64 hw_ring_state;
-	struct xhci_command *cur_cmd = NULL;
+	bool second_timeout = false;
 	xhci = (struct xhci_hcd *) data;
 
 	/* mark this command to be cancelled */
 	spin_lock_irqsave(&xhci->lock, flags);
 	if (xhci->current_cmd) {
-		cur_cmd = xhci->current_cmd;
-		cur_cmd->status = COMP_CMD_ABORT;
+		if (xhci->current_cmd->status == COMP_CMD_ABORT)
+			second_timeout = true;
+		xhci->current_cmd->status = COMP_CMD_ABORT;
 	}
-
 
 	/* Make sure command ring is running before aborting it */
 	hw_ring_state = xhci_read_64(xhci, &xhci->op_regs->cmd_ring);
 	if ((xhci->cmd_ring_state & CMD_RING_STATE_RUNNING) &&
 	    (hw_ring_state & CMD_RING_RUNNING))  {
-
 		spin_unlock_irqrestore(&xhci->lock, flags);
 		xhci_dbg(xhci, "Command timeout\n");
 		ret = xhci_abort_cmd_ring(xhci);
@@ -1280,6 +1287,15 @@ void xhci_handle_command_timeout(unsigned long data)
 		}
 		return;
 	}
+
+	/* command ring failed to restart, or host removed. Bail out */
+	if (second_timeout || xhci->xhc_state & XHCI_STATE_REMOVING) {
+		spin_unlock_irqrestore(&xhci->lock, flags);
+		xhci_dbg(xhci, "command timed out twice, ring start fail?\n");
+		xhci_cleanup_command_queue(xhci);
+		return;
+	}
+
 	/* command timeout on stopped ring, ring can't be aborted */
 	xhci_dbg(xhci, "Command timeout on stopped ring\n");
 	xhci_handle_stopped_cmd_ring(xhci, xhci->current_cmd);
@@ -2728,7 +2744,8 @@ hw_died:
 		writel(irq_pending, &xhci->ir_set->irq_pending);
 	}
 
-	if (xhci->xhc_state & XHCI_STATE_DYING) {
+	if (xhci->xhc_state & XHCI_STATE_DYING ||
+	    xhci->xhc_state & XHCI_STATE_HALTED) {
 		xhci_dbg(xhci, "xHCI dying, ignoring interrupt. "
 				"Shouldn't IRQs be disabled?\n");
 		/* Clear the event handler busy flag (RW1C);
@@ -3066,21 +3083,16 @@ static u32 xhci_td_remainder(struct xhci_hcd *xhci, int transferred,
 {
 	u32 maxp, total_packet_count;
 
-	/* MTK xHCI is mostly 0.97 but contains some features from 1.0 */
-	if (xhci->hci_version < 0x100 && !(xhci->quirks & XHCI_MTK_HOST))
+	if (xhci->hci_version < 0x100)
 		return ((td_total_len - transferred) >> 10);
+
+	maxp = GET_MAX_PACKET(usb_endpoint_maxp(&urb->ep->desc));
+	total_packet_count = DIV_ROUND_UP(td_total_len, maxp);
 
 	/* One TRB with a zero-length data packet. */
 	if (num_trbs_left == 0 || (transferred == 0 && trb_buff_len == 0) ||
 	    trb_buff_len == td_total_len)
 		return 0;
-
-	/* for MTK xHCI, TD size doesn't include this TRB */
-	if (xhci->quirks & XHCI_MTK_HOST)
-		trb_buff_len = 0;
-
-	maxp = GET_MAX_PACKET(usb_endpoint_maxp(&urb->ep->desc));
-	total_packet_count = DIV_ROUND_UP(td_total_len, maxp);
 
 	/* Queueing functions don't count the current TRB into transferred */
 	return (total_packet_count - ((transferred + trb_buff_len) / maxp));
@@ -3469,7 +3481,7 @@ int xhci_queue_ctrl_tx(struct xhci_hcd *xhci, gfp_t mem_flags,
 		field |= 0x1;
 
 	/* xHCI 1.0/1.1 6.4.1.2.1: Transfer Type field */
-	if ((xhci->hci_version >= 0x100) || (xhci->quirks & XHCI_MTK_HOST)) {
+	if (xhci->hci_version >= 0x100) {
 		if (urb->transfer_buffer_length > 0) {
 			if (setup->bRequestType & USB_DIR_IN)
 				field |= TRB_TX_TYPE(TRB_DATA_IN);
@@ -4014,7 +4026,8 @@ static int queue_command(struct xhci_hcd *xhci, struct xhci_command *cmd,
 	int reserved_trbs = xhci->cmd_ring_reserved_trbs;
 	int ret;
 
-	if (xhci->xhc_state) {
+	if ((xhci->xhc_state & XHCI_STATE_DYING) ||
+		(xhci->xhc_state & XHCI_STATE_HALTED)) {
 		xhci_dbg(xhci, "xHCI dying or halted, can't queue_command\n");
 		return -ESHUTDOWN;
 	}

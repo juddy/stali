@@ -8,6 +8,25 @@ menu "I2C Hardware Bus support"
 comment "PC SMBus host controller drivers"
 	depends on PCI
 
+config I2C_BCM2708
+	tristate "BCM2708 BSC"
+	depends on MACH_BCM2708 || MACH_BCM2709 || ARCH_BCM2835
+	help
+	  Enabling this option will add BSC (Broadcom Serial Controller)
+	  support for the BCM2708. BSC is a Broadcom proprietary bus compatible
+	  with I2C/TWI/SMBus.
+
+config I2C_BCM2708_BAUDRATE
+	prompt "BCM2708 I2C baudrate"
+	depends on I2C_BCM2708
+	int
+	default 100000
+	help
+	  Set the I2C baudrate. This will alter the default value. A
+	  different baudrate can be set by using a module parameter as well. If
+	  no parameter is provided when loading, this is the value that will be
+	  used.
+
 config I2C_ALI1535
 	tristate "ALI 1535"
 	depends on PCI
@@ -365,7 +384,7 @@ config I2C_AXXIA
 
 config I2C_BCM2835
 	tristate "Broadcom BCM2835 I2C controller"
-	depends on ARCH_BCM2835
+	depends on ARCH_BCM2835 || ARCH_BCM2708 || ARCH_BCM2709
 	help
 	  If you say yes to this option, support will be included for the
 	  BCM2835 I2C controller.
@@ -516,7 +535,7 @@ config I2C_EFM32
 
 config I2C_EG20T
 	tristate "Intel EG20T PCH/LAPIS Semicon IOH(ML7213/ML7223/ML7831) I2C"
-	depends on PCI && (X86_32 || MIPS || COMPILE_TEST)
+	depends on PCI && (X86_32 || COMPILE_TEST)
 	help
 	  This driver is for PCH(Platform controller Hub) I2C of EG20T which
 	  is an IOH(Input/Output Hub) for x86 embedded processor.
@@ -532,7 +551,6 @@ config I2C_EG20T
 config I2C_EMEV2
 	tristate "EMMA Mobile series I2C adapter"
 	depends on HAVE_CLK
-	select I2C_SLAVE
 	help
 	  If you say yes to this option, support will be included for the
 	  I2C interface on the Renesas Electronics EM/EV family of processors.
@@ -964,11 +982,11 @@ config I2C_XILINX
 	  will be called xilinx_i2c.
 
 config I2C_XLR
-	tristate "Netlogic XLR and Sigma Designs I2C support"
-	depends on CPU_XLR || ARCH_TANGOX
+	tristate "XLR I2C support"
+	depends on CPU_XLR
 	help
 	  This driver enables support for the on-chip I2C interface of
-	  the Netlogic XLR/XLS MIPS processors and Sigma Designs SOCs.
+	  the Netlogic XLR/XLS MIPS processors.
 
 	  This driver can also be built as a module.  If so, the module
 	  will be called i2c-xlr.

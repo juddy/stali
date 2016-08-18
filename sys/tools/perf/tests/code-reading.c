@@ -433,6 +433,7 @@ enum {
 
 static int do_test_code_reading(bool try_kcore)
 {
+	struct machines machines;
 	struct machine *machine;
 	struct thread *thread;
 	struct record_opts opts = {
@@ -458,7 +459,8 @@ static int do_test_code_reading(bool try_kcore)
 
 	pid = getpid();
 
-	machine = machine__new_host();
+	machines__init(&machines);
+	machine = &machines.host;
 
 	ret = machine__create_kernel_maps(machine);
 	if (ret < 0) {
@@ -547,13 +549,6 @@ static int do_test_code_reading(bool try_kcore)
 		if (ret < 0) {
 			if (!excl_kernel) {
 				excl_kernel = true;
-				/*
-				 * Both cpus and threads are now owned by evlist
-				 * and will be freed by following perf_evlist__set_maps
-				 * call. Getting refference to keep them alive.
-				 */
-				cpu_map__get(cpus);
-				thread_map__get(threads);
 				perf_evlist__set_maps(evlist, NULL, NULL);
 				perf_evlist__delete(evlist);
 				evlist = NULL;
@@ -599,13 +594,14 @@ out_err:
 		cpu_map__put(cpus);
 		thread_map__put(threads);
 	}
+	machines__destroy_kernel_maps(&machines);
 	machine__delete_threads(machine);
-	machine__delete(machine);
+	machines__exit(&machines);
 
 	return err;
 }
 
-int test__code_reading(int subtest __maybe_unused)
+int test__code_reading(void)
 {
 	int ret;
 

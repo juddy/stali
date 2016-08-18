@@ -26,6 +26,7 @@
 #include <drm/drm_fb_cma_helper.h>
 #include <drm/drm_plane_helper.h>
 #include <drm/drm_of.h>
+#include <video/imx-ipu-v3.h>
 
 #include "imx-drm.h"
 
@@ -39,41 +40,46 @@ struct imx_drm_component {
 struct imx_drm_device {
 	struct drm_device			*drm;
 	struct imx_drm_crtc			*crtc[MAX_CRTC];
-	unsigned int				pipes;
+	int					pipes;
 	struct drm_fbdev_cma			*fbhelper;
 };
 
 struct imx_drm_crtc {
 	struct drm_crtc				*crtc;
+	int					pipe;
 	struct imx_drm_crtc_helper_funcs	imx_drm_helper_funcs;
 };
 
-#if IS_ENABLED(CONFIG_DRM_FBDEV_EMULATION)
 static int legacyfb_depth = 16;
 module_param(legacyfb_depth, int, 0444);
-#endif
 
-unsigned int imx_drm_crtc_id(struct imx_drm_crtc *crtc)
+int imx_drm_crtc_id(struct imx_drm_crtc *crtc)
 {
-	return drm_crtc_index(crtc->crtc);
+	return crtc->pipe;
 }
 EXPORT_SYMBOL_GPL(imx_drm_crtc_id);
 
 static void imx_drm_driver_lastclose(struct drm_device *drm)
 {
+#if IS_ENABLED(CONFIG_DRM_IMX_FB_HELPER)
 	struct imx_drm_device *imxdrm = drm->dev_private;
 
 	drm_fbdev_cma_restore_mode(imxdrm->fbhelper);
+#endif
 }
 
 static int imx_drm_driver_unload(struct drm_device *drm)
 {
+#if IS_ENABLED(CONFIG_DRM_IMX_FB_HELPER)
 	struct imx_drm_device *imxdrm = drm->dev_private;
+#endif
 
 	drm_kms_helper_poll_fini(drm);
 
+#if IS_ENABLED(CONFIG_DRM_IMX_FB_HELPER)
 	if (imxdrm->fbhelper)
 		drm_fbdev_cma_fini(imxdrm->fbhelper);
+#endif
 
 	component_unbind_all(drm->dev, drm);
 
@@ -123,19 +129,19 @@ EXPORT_SYMBOL_GPL(imx_drm_set_bus_format);
 
 int imx_drm_crtc_vblank_get(struct imx_drm_crtc *imx_drm_crtc)
 {
-	return drm_crtc_vblank_get(imx_drm_crtc->crtc);
+	return drm_vblank_get(imx_drm_crtc->crtc->dev, imx_drm_crtc->pipe);
 }
 EXPORT_SYMBOL_GPL(imx_drm_crtc_vblank_get);
 
 void imx_drm_crtc_vblank_put(struct imx_drm_crtc *imx_drm_crtc)
 {
-	drm_crtc_vblank_put(imx_drm_crtc->crtc);
+	drm_vblank_put(imx_drm_crtc->crtc->dev, imx_drm_crtc->pipe);
 }
 EXPORT_SYMBOL_GPL(imx_drm_crtc_vblank_put);
 
 void imx_drm_handle_vblank(struct imx_drm_crtc *imx_drm_crtc)
 {
-	drm_crtc_handle_vblank(imx_drm_crtc->crtc);
+	drm_handle_vblank(imx_drm_crtc->crtc->dev, imx_drm_crtc->pipe);
 }
 EXPORT_SYMBOL_GPL(imx_drm_handle_vblank);
 
@@ -209,12 +215,14 @@ EXPORT_SYMBOL_GPL(imx_drm_encoder_destroy);
 
 static void imx_drm_output_poll_changed(struct drm_device *drm)
 {
+#if IS_ENABLED(CONFIG_DRM_IMX_FB_HELPER)
 	struct imx_drm_device *imxdrm = drm->dev_private;
 
 	drm_fbdev_cma_hotplug_event(imxdrm->fbhelper);
+#endif
 }
 
-static const struct drm_mode_config_funcs imx_drm_mode_config_funcs = {
+static struct drm_mode_config_funcs imx_drm_mode_config_funcs = {
 	.fb_create = drm_fb_cma_create,
 	.output_poll_changed = imx_drm_output_poll_changed,
 };
@@ -300,7 +308,7 @@ static int imx_drm_driver_load(struct drm_device *drm, unsigned long flags)
 	 * The fb helper takes copies of key hardware information, so the
 	 * crtcs/connectors/encoders must not change after this point.
 	 */
-#if IS_ENABLED(CONFIG_DRM_FBDEV_EMULATION)
+#if IS_ENABLED(CONFIG_DRM_IMX_FB_HELPER)
 	if (legacyfb_depth != 16 && legacyfb_depth != 32) {
 		dev_warn(drm->dev, "Invalid legacyfb_depth.  Defaulting to 16bpp\n");
 		legacyfb_depth = 16;
@@ -356,11 +364,12 @@ int imx_drm_add_crtc(struct drm_device *drm, struct drm_crtc *crtc,
 		return -ENOMEM;
 
 	imx_drm_crtc->imx_drm_helper_funcs = *imx_drm_helper_funcs;
+	imx_drm_crtc->pipe = imxdrm->pipes++;
 	imx_drm_crtc->crtc = crtc;
 
 	crtc->port = port;
 
-	imxdrm->crtc[imxdrm->pipes++] = imx_drm_crtc;
+	imxdrm->crtc[imx_drm_crtc->pipe] = imx_drm_crtc;
 
 	*new_crtc = imx_drm_crtc;
 
@@ -372,12 +381,12 @@ int imx_drm_add_crtc(struct drm_device *drm, struct drm_crtc *crtc,
 			imx_drm_crtc->imx_drm_helper_funcs.crtc_helper_funcs);
 
 	drm_crtc_init_with_planes(drm, crtc, primary_plane, NULL,
-			imx_drm_crtc->imx_drm_helper_funcs.crtc_funcs, NULL);
+			imx_drm_crtc->imx_drm_helper_funcs.crtc_funcs);
 
 	return 0;
 
 err_register:
-	imxdrm->crtc[--imxdrm->pipes] = NULL;
+	imxdrm->crtc[imx_drm_crtc->pipe] = NULL;
 	kfree(imx_drm_crtc);
 	return ret;
 }
@@ -389,11 +398,10 @@ EXPORT_SYMBOL_GPL(imx_drm_add_crtc);
 int imx_drm_remove_crtc(struct imx_drm_crtc *imx_drm_crtc)
 {
 	struct imx_drm_device *imxdrm = imx_drm_crtc->crtc->dev->dev_private;
-	unsigned int pipe = drm_crtc_index(imx_drm_crtc->crtc);
 
 	drm_crtc_cleanup(imx_drm_crtc->crtc);
 
-	imxdrm->crtc[pipe] = NULL;
+	imxdrm->crtc[imx_drm_crtc->pipe] = NULL;
 
 	kfree(imx_drm_crtc);
 
@@ -497,6 +505,13 @@ static struct drm_driver imx_drm_driver = {
 static int compare_of(struct device *dev, void *data)
 {
 	struct device_node *np = data;
+
+	/* Special case for DI, dev->of_node may not be set yet */
+	if (strcmp(dev->driver->name, "imx-ipuv3-crtc") == 0) {
+		struct ipu_client_platformdata *pdata = dev->platform_data;
+
+		return pdata->of_node == np;
+	}
 
 	/* Special case for LDB, one device for two channels */
 	if (of_node_cmp(np->name, "lvds-channel") == 0) {

@@ -429,12 +429,8 @@ static int __key_instantiate_and_link(struct key *key,
 				awaken = 1;
 
 			/* and link it into the destination keyring */
-			if (keyring) {
-				if (test_bit(KEY_FLAG_KEEP, &keyring->flags))
-					set_bit(KEY_FLAG_KEEP, &key->flags);
-
+			if (keyring)
 				__key_link(key, _edit);
-			}
 
 			/* disable the authorisation key */
 			if (authkey)
@@ -582,7 +578,7 @@ int key_reject_and_link(struct key *key,
 
 	mutex_unlock(&key_construction_mutex);
 
-	if (keyring)
+	if (keyring && link_ret == 0)
 		__key_link_end(keyring, &key->index_key, edit);
 
 	/* wake up anyone waiting for a key to be constructed */

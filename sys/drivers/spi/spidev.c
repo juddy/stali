@@ -284,7 +284,7 @@ static int spidev_message(struct spidev_data *spidev,
 			k_tmp->speed_hz = spidev->speed_hz;
 #ifdef VERBOSE
 		dev_dbg(&spidev->spi->dev,
-			"  xfer len %u %s%s%s%dbits %u usec %uHz\n",
+			"  xfer len %zd %s%s%s%dbits %u usec %uHz\n",
 			u_tmp->len,
 			u_tmp->rx_buf ? "rx " : "",
 			u_tmp->tx_buf ? "tx " : "",
@@ -695,6 +695,7 @@ static struct class *spidev_class;
 static const struct of_device_id spidev_dt_ids[] = {
 	{ .compatible = "rohm,dh2228fv" },
 	{ .compatible = "lineartechnology,ltc2488" },
+	{ .compatible = "spidev" },
 	{},
 };
 MODULE_DEVICE_TABLE(of, spidev_dt_ids);

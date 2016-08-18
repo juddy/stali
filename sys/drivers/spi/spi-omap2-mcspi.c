@@ -24,7 +24,6 @@
 #include <linux/dma-mapping.h>
 #include <linux/dmaengine.h>
 #include <linux/omap-dma.h>
-#include <linux/pinctrl/consumer.h>
 #include <linux/platform_device.h>
 #include <linux/err.h>
 #include <linux/clk.h>
@@ -1490,8 +1489,6 @@ static int omap2_mcspi_probe(struct platform_device *pdev)
 	return status;
 
 disable_pm:
-	pm_runtime_dont_use_autosuspend(&pdev->dev);
-	pm_runtime_put_sync(&pdev->dev);
 	pm_runtime_disable(&pdev->dev);
 free_master:
 	spi_master_put(master);
@@ -1503,7 +1500,6 @@ static int omap2_mcspi_remove(struct platform_device *pdev)
 	struct spi_master *master = platform_get_drvdata(pdev);
 	struct omap2_mcspi *mcspi = spi_master_get_devdata(master);
 
-	pm_runtime_dont_use_autosuspend(mcspi->dev);
 	pm_runtime_put_sync(mcspi->dev);
 	pm_runtime_disable(&pdev->dev);
 
@@ -1541,23 +1537,14 @@ static int omap2_mcspi_resume(struct device *dev)
 	}
 	pm_runtime_mark_last_busy(mcspi->dev);
 	pm_runtime_put_autosuspend(mcspi->dev);
-
-	return pinctrl_pm_select_default_state(dev);
+	return 0;
 }
-
-static int omap2_mcspi_suspend(struct device *dev)
-{
-	return pinctrl_pm_select_sleep_state(dev);
-}
-
 #else
-#define omap2_mcspi_suspend	NULL
 #define	omap2_mcspi_resume	NULL
 #endif
 
 static const struct dev_pm_ops omap2_mcspi_pm_ops = {
 	.resume = omap2_mcspi_resume,
-	.suspend = omap2_mcspi_suspend,
 	.runtime_resume	= omap_mcspi_runtime_resume,
 };
 

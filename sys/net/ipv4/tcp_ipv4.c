@@ -73,6 +73,7 @@
 #include <net/timewait_sock.h>
 #include <net/xfrm.h>
 #include <net/secure_seq.h>
+#include <net/tcp_memcontrol.h>
 #include <net/busy_poll.h>
 
 #include <linux/inet.h>
@@ -319,8 +320,6 @@ void tcp_req_err(struct sock *sk, u32 seq, bool abort)
 	/* ICMPs are not backlogged, hence we cannot get
 	 * an established socket here.
 	 */
-	WARN_ON(req->sk);
-
 	if (seq != tcp_rsk(req)->snt_isn) {
 		NET_INC_STATS_BH(net, LINUX_MIB_OUTOFWINDOWICMPS);
 	} else if (abort) {
@@ -591,7 +590,7 @@ static void tcp_v4_send_reset(const struct sock *sk, struct sk_buff *skb)
 	} rep;
 	struct ip_reply_arg arg;
 #ifdef CONFIG_TCP_MD5SIG
-	struct tcp_md5sig_key *key = NULL;
+	struct tcp_md5sig_key *key;
 	const __u8 *hash_location = NULL;
 	unsigned char newhash[16];
 	int genhash;
@@ -631,10 +630,7 @@ static void tcp_v4_send_reset(const struct sock *sk, struct sk_buff *skb)
 	net = sk ? sock_net(sk) : dev_net(skb_dst(skb)->dev);
 #ifdef CONFIG_TCP_MD5SIG
 	hash_location = tcp_parse_md5sig_option(th);
-	if (sk && sk_fullsock(sk)) {
-		key = tcp_md5_do_lookup(sk, (union tcp_md5_addr *)
-					&ip_hdr(skb)->saddr, AF_INET);
-	} else if (hash_location) {
+	if (!sk && hash_location) {
 		/*
 		 * active side is lost. Try to find listening socket through
 		 * source port, and then find md5 key through listening socket.
@@ -658,6 +654,10 @@ static void tcp_v4_send_reset(const struct sock *sk, struct sk_buff *skb)
 		genhash = tcp_v4_md5_hash_skb(newhash, key, NULL, skb);
 		if (genhash || memcmp(hash_location, newhash, 16) != 0)
 			goto release_sk1;
+	} else {
+		key = sk ? tcp_md5_do_lookup(sk, (union tcp_md5_addr *)
+					     &ip_hdr(skb)->saddr,
+					     AF_INET) : NULL;
 	}
 
 	if (key) {
@@ -678,17 +678,13 @@ static void tcp_v4_send_reset(const struct sock *sk, struct sk_buff *skb)
 				      ip_hdr(skb)->saddr, /* XXX */
 				      arg.iov[0].iov_len, IPPROTO_TCP, 0);
 	arg.csumoffset = offsetof(struct tcphdr, check) / 2;
-	arg.flags = (sk && inet_sk_transparent(sk)) ? IP_REPLY_ARG_NOSRCCHECK : 0;
-
+	arg.flags = (sk && inet_sk(sk)->transparent) ? IP_REPLY_ARG_NOSRCCHECK : 0;
 	/* When socket is gone, all binding information is lost.
 	 * routing might fail in this case. No choice here, if we choose to force
 	 * input interface, we will misroute in case of asymmetric route.
 	 */
 	if (sk)
 		arg.bound_dev_if = sk->sk_bound_dev_if;
-
-	BUILD_BUG_ON(offsetof(struct sock, sk_bound_dev_if) !=
-		     offsetof(struct inet_timewait_sock, tw_bound_dev_if));
 
 	arg.tos = ip_hdr(skb)->tos;
 	ip_send_unicast_reply(*this_cpu_ptr(net->ipv4.tcp_sk),
@@ -1286,7 +1282,6 @@ struct sock *tcp_v4_syn_recv_sock(const struct sock *sk, struct sk_buff *skb,
 	ireq		      = inet_rsk(req);
 	sk_daddr_set(newsk, ireq->ir_rmt_addr);
 	sk_rcv_saddr_set(newsk, ireq->ir_loc_addr);
-	newsk->sk_bound_dev_if = ireq->ir_iif;
 	newinet->inet_saddr	      = ireq->ir_loc_addr;
 	inet_opt	      = ireq->opt;
 	rcu_assign_pointer(newinet->inet_opt, inet_opt);
@@ -1718,9 +1713,7 @@ do_time_wait:
 		tcp_v4_timewait_ack(sk, skb);
 		break;
 	case TCP_TW_RST:
-		tcp_v4_send_reset(sk, skb);
-		inet_twsk_deschedule_put(inet_twsk(sk));
-		goto discard_it;
+		goto no_tcp_socket;
 	case TCP_TW_SUCCESS:;
 	}
 	goto discard_it;
@@ -1827,9 +1820,7 @@ void tcp_v4_destroy_sock(struct sock *sk)
 	tcp_saved_syn_free(tp);
 
 	sk_sockets_allocated_dec(sk);
-
-	if (mem_cgroup_sockets_enabled && sk->sk_memcg)
-		sock_release_memcg(sk);
+	sock_release_memcg(sk);
 }
 EXPORT_SYMBOL(tcp_v4_destroy_sock);
 
@@ -2353,7 +2344,11 @@ struct proto tcp_prot = {
 	.compat_setsockopt	= compat_tcp_setsockopt,
 	.compat_getsockopt	= compat_tcp_getsockopt,
 #endif
-	.diag_destroy		= tcp_abort,
+#ifdef CONFIG_MEMCG_KMEM
+	.init_cgroup		= tcp_init_cgroup,
+	.destroy_cgroup		= tcp_destroy_cgroup,
+	.proto_cgroup		= tcp_proto_cgroup,
+#endif
 };
 EXPORT_SYMBOL(tcp_prot);
 
@@ -2390,10 +2385,6 @@ static int __net_init tcp_sk_init(struct net *net)
 	net->ipv4.sysctl_tcp_base_mss = TCP_BASE_MSS;
 	net->ipv4.sysctl_tcp_probe_threshold = TCP_PROBE_THRESHOLD;
 	net->ipv4.sysctl_tcp_probe_interval = TCP_PROBE_INTERVAL;
-
-	net->ipv4.sysctl_tcp_keepalive_time = TCP_KEEPALIVE_TIME;
-	net->ipv4.sysctl_tcp_keepalive_probes = TCP_KEEPALIVE_PROBES;
-	net->ipv4.sysctl_tcp_keepalive_intvl = TCP_KEEPALIVE_INTVL;
 
 	return 0;
 fail:

@@ -445,9 +445,11 @@ static int isBranchInstr(struct pt_regs *regs, struct mm_decoded_insn dec_insn,
 	case spec_op:
 		switch (insn.r_format.func) {
 		case jalr_op:
-			regs->regs[insn.r_format.rd] =
-				regs->cp0_epc + dec_insn.pc_inc +
-				dec_insn.next_pc_inc;
+			if (insn.r_format.rd != 0) {
+				regs->regs[insn.r_format.rd] =
+					regs->cp0_epc + dec_insn.pc_inc +
+					dec_insn.next_pc_inc;
+			}
 			/* Fall through */
 		case jr_op:
 			/* For R6, JR already emulated in jalr_op */
@@ -1266,8 +1268,6 @@ branch_common:
 						 */
 						sig = mips_dsemul(xcp, ir,
 								  contpc);
-						if (sig < 0)
-							break;
 						if (sig)
 							xcp->cp0_epc = bcpc;
 						/*
@@ -1321,8 +1321,6 @@ branch_common:
 				 * instruction in the dslot
 				 */
 				sig = mips_dsemul(xcp, ir, contpc);
-				if (sig < 0)
-					break;
 				if (sig)
 					xcp->cp0_epc = bcpc;
 				/* SIGILL forces out of the emulation loop.  */

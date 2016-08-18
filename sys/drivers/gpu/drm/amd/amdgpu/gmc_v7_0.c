@@ -407,10 +407,6 @@ static int gmc_v7_0_mc_init(struct amdgpu_device *adev)
 	adev->mc.real_vram_size = RREG32(mmCONFIG_MEMSIZE) * 1024ULL * 1024ULL;
 	adev->mc.visible_vram_size = adev->mc.aper_size;
 
-	/* In case the PCI BAR is larger than the actual amount of vram */
-	if (adev->mc.visible_vram_size > adev->mc.real_vram_size)
-		adev->mc.visible_vram_size = adev->mc.real_vram_size;
-
 	/* unless the user had overridden it, set the gart
 	 * size equal to the 1024 or vram, whichever is larger.
 	 */
@@ -792,7 +788,7 @@ static void gmc_v7_0_enable_mc_ls(struct amdgpu_device *adev,
 
 	for (i = 0; i < ARRAY_SIZE(mc_cg_registers); i++) {
 		orig = data = RREG32(mc_cg_registers[i]);
-		if (enable && (adev->cg_flags & AMD_CG_SUPPORT_MC_LS))
+		if (enable && (adev->cg_flags & AMDGPU_CG_SUPPORT_MC_LS))
 			data |= mc_cg_ls_en[i];
 		else
 			data &= ~mc_cg_ls_en[i];
@@ -809,7 +805,7 @@ static void gmc_v7_0_enable_mc_mgcg(struct amdgpu_device *adev,
 
 	for (i = 0; i < ARRAY_SIZE(mc_cg_registers); i++) {
 		orig = data = RREG32(mc_cg_registers[i]);
-		if (enable && (adev->cg_flags & AMD_CG_SUPPORT_MC_MGCG))
+		if (enable && (adev->cg_flags & AMDGPU_CG_SUPPORT_MC_MGCG))
 			data |= mc_cg_en[i];
 		else
 			data &= ~mc_cg_en[i];
@@ -825,7 +821,7 @@ static void gmc_v7_0_enable_bif_mgls(struct amdgpu_device *adev,
 
 	orig = data = RREG32_PCIE(ixPCIE_CNTL2);
 
-	if (enable && (adev->cg_flags & AMD_CG_SUPPORT_BIF_LS)) {
+	if (enable && (adev->cg_flags & AMDGPU_CG_SUPPORT_BIF_LS)) {
 		data = REG_SET_FIELD(data, PCIE_CNTL2, SLV_MEM_LS_EN, 1);
 		data = REG_SET_FIELD(data, PCIE_CNTL2, MST_MEM_LS_EN, 1);
 		data = REG_SET_FIELD(data, PCIE_CNTL2, REPLAY_MEM_LS_EN, 1);
@@ -848,7 +844,7 @@ static void gmc_v7_0_enable_hdp_mgcg(struct amdgpu_device *adev,
 
 	orig = data = RREG32(mmHDP_HOST_PATH_CNTL);
 
-	if (enable && (adev->cg_flags & AMD_CG_SUPPORT_HDP_MGCG))
+	if (enable && (adev->cg_flags & AMDGPU_CG_SUPPORT_HDP_MGCG))
 		data = REG_SET_FIELD(data, HDP_HOST_PATH_CNTL, CLOCK_GATING_DIS, 0);
 	else
 		data = REG_SET_FIELD(data, HDP_HOST_PATH_CNTL, CLOCK_GATING_DIS, 1);
@@ -864,7 +860,7 @@ static void gmc_v7_0_enable_hdp_ls(struct amdgpu_device *adev,
 
 	orig = data = RREG32(mmHDP_MEM_POWER_LS);
 
-	if (enable && (adev->cg_flags & AMD_CG_SUPPORT_HDP_LS))
+	if (enable && (adev->cg_flags & AMDGPU_CG_SUPPORT_HDP_LS))
 		data = REG_SET_FIELD(data, HDP_MEM_POWER_LS, LS_ENABLE, 1);
 	else
 		data = REG_SET_FIELD(data, HDP_MEM_POWER_LS, LS_ENABLE, 0);
@@ -902,14 +898,6 @@ static int gmc_v7_0_early_init(void *handle)
 	gmc_v7_0_set_gart_funcs(adev);
 	gmc_v7_0_set_irq_funcs(adev);
 
-	if (adev->flags & AMD_IS_APU) {
-		adev->mc.vram_type = AMDGPU_VRAM_TYPE_UNKNOWN;
-	} else {
-		u32 tmp = RREG32(mmMC_SEQ_MISC0);
-		tmp &= MC_SEQ_MISC0__MT__MASK;
-		adev->mc.vram_type = gmc_v7_0_convert_vram_type(tmp);
-	}
-
 	return 0;
 }
 
@@ -929,6 +917,14 @@ static int gmc_v7_0_sw_init(void *handle)
 	r = amdgpu_gem_init(adev);
 	if (r)
 		return r;
+
+	if (adev->flags & AMD_IS_APU) {
+		adev->mc.vram_type = AMDGPU_VRAM_TYPE_UNKNOWN;
+	} else {
+		u32 tmp = RREG32(mmMC_SEQ_MISC0);
+		tmp &= MC_SEQ_MISC0__MT__MASK;
+		adev->mc.vram_type = gmc_v7_0_convert_vram_type(tmp);
+	}
 
 	r = amdgpu_irq_add_id(adev, 146, &adev->mc.vm_fault);
 	if (r)
@@ -1055,6 +1051,7 @@ static int gmc_v7_0_suspend(void *handle)
 	struct amdgpu_device *adev = (struct amdgpu_device *)handle;
 
 	if (adev->vm_manager.enabled) {
+		amdgpu_vm_manager_fini(adev);
 		gmc_v7_0_vm_fini(adev);
 		adev->vm_manager.enabled = false;
 	}

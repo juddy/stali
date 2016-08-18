@@ -755,6 +755,7 @@ static int atmel_sha_finish(struct ahash_request *req)
 {
 	struct atmel_sha_reqctx *ctx = ahash_request_ctx(req);
 	struct atmel_sha_dev *dd = ctx->dd;
+	int err = 0;
 
 	if (ctx->digcnt[0] || ctx->digcnt[1])
 		atmel_sha_copy_ready_hash(req);
@@ -762,7 +763,7 @@ static int atmel_sha_finish(struct ahash_request *req)
 	dev_dbg(dd->dev, "digcnt: 0x%llx 0x%llx, bufcnt: %d\n", ctx->digcnt[1],
 		ctx->digcnt[0], ctx->bufcnt);
 
-	return 0;
+	return err;
 }
 
 static void atmel_sha_finish_req(struct ahash_request *req, int err)
@@ -1404,9 +1405,9 @@ static int atmel_sha_probe(struct platform_device *pdev)
 	}
 
 	sha_dd->io_base = devm_ioremap_resource(&pdev->dev, sha_res);
-	if (!sha_dd->io_base) {
+	if (IS_ERR(sha_dd->io_base)) {
 		dev_err(dev, "can't ioremap\n");
-		err = -ENOMEM;
+		err = PTR_ERR(sha_dd->io_base);
 		goto res_err;
 	}
 

@@ -469,6 +469,10 @@ static int __ext4_ext_check(const char *function, unsigned int line,
 		error_msg = "invalid extent entries";
 		goto corrupted;
 	}
+	if (unlikely(depth > 32)) {
+		error_msg = "too large eh_depth";
+		goto corrupted;
+	}
 	/* Verify checksum on non-root extent tree nodes */
 	if (ext_depth(inode) != depth &&
 	    !ext4_extent_block_csum_verify(inode, eh)) {
@@ -3119,11 +3123,19 @@ static int ext4_ext_zeroout(struct inode *inode, struct ext4_extent *ex)
 {
 	ext4_fsblk_t ee_pblock;
 	unsigned int ee_len;
+	int ret;
 
 	ee_len    = ext4_ext_get_actual_len(ex);
 	ee_pblock = ext4_ext_pblock(ex);
-	return ext4_issue_zeroout(inode, le32_to_cpu(ex->ee_block), ee_pblock,
-				  ee_len);
+
+	if (ext4_encrypted_inode(inode))
+		return ext4_encrypted_zeroout(inode, ex);
+
+	ret = sb_issue_zeroout(inode->i_sb, ee_pblock, ee_len, GFP_NOFS);
+	if (ret > 0)
+		ret = 0;
+
+	return ret;
 }
 
 /*
@@ -3928,7 +3940,7 @@ static int
 convert_initialized_extent(handle_t *handle, struct inode *inode,
 			   struct ext4_map_blocks *map,
 			   struct ext4_ext_path **ppath, int flags,
-			   unsigned int allocated)
+			   unsigned int allocated, ext4_fsblk_t newblock)
 {
 	struct ext4_ext_path *path = *ppath;
 	struct ext4_extent *ex;
@@ -4044,14 +4056,6 @@ ext4_ext_handle_unwritten_extents(handle_t *handle, struct inode *inode,
 	}
 	/* IO end_io complete, convert the filled extent to written */
 	if (flags & EXT4_GET_BLOCKS_CONVERT) {
-		if (flags & EXT4_GET_BLOCKS_ZERO) {
-			if (allocated > map->m_len)
-				allocated = map->m_len;
-			err = ext4_issue_zeroout(inode, map->m_lblk, newblock,
-						 allocated);
-			if (err < 0)
-				goto out2;
-		}
 		ret = ext4_convert_unwritten_extents_endio(handle, inode, map,
 							   ppath);
 		if (ret >= 0) {
@@ -4347,7 +4351,7 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
 			    (flags & EXT4_GET_BLOCKS_CONVERT_UNWRITTEN)) {
 				allocated = convert_initialized_extent(
 						handle, inode, map, &path,
-						flags, allocated);
+						flags, allocated, newblock);
 				goto out2;
 			} else if (!ext4_ext_is_unwritten(ex))
 				goto out;
@@ -4799,7 +4803,7 @@ static long ext4_zero_range(struct file *file, loff_t offset,
 	else
 		max_blocks -= lblk;
 
-	inode_lock(inode);
+	mutex_lock(&inode->i_mutex);
 
 	/*
 	 * Indirect files do not support unwritten extnets
@@ -4902,7 +4906,7 @@ static long ext4_zero_range(struct file *file, loff_t offset,
 out_dio:
 	ext4_inode_resume_unlocked_dio(inode);
 out_mutex:
-	inode_unlock(inode);
+	mutex_unlock(&inode->i_mutex);
 	return ret;
 }
 
@@ -4973,7 +4977,7 @@ long ext4_fallocate(struct file *file, int mode, loff_t offset, loff_t len)
 	if (mode & FALLOC_FL_KEEP_SIZE)
 		flags |= EXT4_GET_BLOCKS_KEEP_SIZE;
 
-	inode_lock(inode);
+	mutex_lock(&inode->i_mutex);
 
 	/*
 	 * We only support preallocation for extent-based files only
@@ -5006,7 +5010,7 @@ long ext4_fallocate(struct file *file, int mode, loff_t offset, loff_t len)
 						EXT4_I(inode)->i_sync_tid);
 	}
 out:
-	inode_unlock(inode);
+	mutex_unlock(&inode->i_mutex);
 	trace_ext4_fallocate_exit(inode, offset, max_blocks, ret);
 	return ret;
 }
@@ -5492,7 +5496,7 @@ int ext4_collapse_range(struct inode *inode, loff_t offset, loff_t len)
 			return ret;
 	}
 
-	inode_lock(inode);
+	mutex_lock(&inode->i_mutex);
 	/*
 	 * There is no need to overlap collapse range with EOF, in which case
 	 * it is effectively a truncate operation
@@ -5587,7 +5591,7 @@ out_mmap:
 	up_write(&EXT4_I(inode)->i_mmap_sem);
 	ext4_inode_resume_unlocked_dio(inode);
 out_mutex:
-	inode_unlock(inode);
+	mutex_unlock(&inode->i_mutex);
 	return ret;
 }
 
@@ -5638,7 +5642,7 @@ int ext4_insert_range(struct inode *inode, loff_t offset, loff_t len)
 			return ret;
 	}
 
-	inode_lock(inode);
+	mutex_lock(&inode->i_mutex);
 	/* Currently just for extent based files */
 	if (!ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS)) {
 		ret = -EOPNOTSUPP;
@@ -5757,7 +5761,7 @@ out_mmap:
 	up_write(&EXT4_I(inode)->i_mmap_sem);
 	ext4_inode_resume_unlocked_dio(inode);
 out_mutex:
-	inode_unlock(inode);
+	mutex_unlock(&inode->i_mutex);
 	return ret;
 }
 
@@ -5792,8 +5796,8 @@ ext4_swap_extents(handle_t *handle, struct inode *inode1,
 
 	BUG_ON(!rwsem_is_locked(&EXT4_I(inode1)->i_data_sem));
 	BUG_ON(!rwsem_is_locked(&EXT4_I(inode2)->i_data_sem));
-	BUG_ON(!inode_is_locked(inode1));
-	BUG_ON(!inode_is_locked(inode2));
+	BUG_ON(!mutex_is_locked(&inode1->i_mutex));
+	BUG_ON(!mutex_is_locked(&inode2->i_mutex));
 
 	*erp = ext4_es_remove_extent(inode1, lblk1, count);
 	if (unlikely(*erp))

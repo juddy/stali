@@ -338,12 +338,13 @@ struct tty_file_private {
 #define TTY_EXCLUSIVE 		3	/* Exclusive open mode */
 #define TTY_DEBUG 		4	/* Debugging */
 #define TTY_DO_WRITE_WAKEUP 	5	/* Call write_wakeup after queuing new */
-#define TTY_OTHER_DONE		6	/* Closed pty has completed input processing */
 #define TTY_LDISC_OPEN	 	11	/* Line discipline is open */
 #define TTY_PTY_LOCK 		16	/* pty private */
 #define TTY_NO_WRITE_SPLIT 	17	/* Preserve write boundaries to driver */
 #define TTY_HUPPED 		18	/* Post driver->hangup() */
 #define TTY_LDISC_HALTED	22	/* Line discipline is halted */
+
+#define TTY_WRITE_FLUSH(tty) tty_write_flush((tty))
 
 /* Values for tty->flow_change */
 #define TTY_THROTTLE_SAFE 1
@@ -393,6 +394,8 @@ static inline int __init tty_init(void)
 { return 0; }
 #endif
 
+extern void tty_write_flush(struct tty_struct *);
+
 extern struct ktermios tty_std_termios;
 
 extern int vcs_init(void);
@@ -415,8 +418,9 @@ static inline struct tty_struct *tty_kref_get(struct tty_struct *tty)
 	return tty;
 }
 
+extern int tty_paranoia_check(struct tty_struct *tty, struct inode *inode,
+			      const char *routine);
 extern const char *tty_name(const struct tty_struct *tty);
-extern const char *tty_driver_name(const struct tty_struct *tty);
 extern void tty_wait_until_sent(struct tty_struct *tty, long timeout);
 extern int __tty_check_change(struct tty_struct *tty, int sig);
 extern int tty_check_change(struct tty_struct *tty);
@@ -464,6 +468,7 @@ extern void tty_buffer_init(struct tty_port *port);
 extern void tty_buffer_set_lock_subclass(struct tty_port *port);
 extern bool tty_buffer_restart_work(struct tty_port *port);
 extern bool tty_buffer_cancel_work(struct tty_port *port);
+extern void tty_buffer_flush_work(struct tty_port *port);
 extern speed_t tty_termios_baud_rate(struct ktermios *termios);
 extern speed_t tty_termios_input_baud_rate(struct ktermios *termios);
 extern void tty_termios_encode_baud_rate(struct ktermios *termios,
@@ -589,7 +594,7 @@ static inline int tty_ldisc_receive_buf(struct tty_ldisc *ld, unsigned char *p,
 		count = ld->ops->receive_buf2(ld->tty, p, f, count);
 	else {
 		count = min_t(int, count, ld->tty->receive_room);
-		if (count)
+		if (count && ld->ops->receive_buf)
 			ld->ops->receive_buf(ld->tty, p, f, count);
 	}
 	return count;
@@ -663,16 +668,10 @@ static inline void proc_tty_register_driver(struct tty_driver *d) {}
 static inline void proc_tty_unregister_driver(struct tty_driver *d) {}
 #endif
 
-#define tty_msg(fn, tty, f, ...) \
-	fn("%s %s: " f, tty_driver_name(tty), tty_name(tty), ##__VA_ARGS__)
-
-#define tty_debug(tty, f, ...)	tty_msg(pr_debug, tty, f, ##__VA_ARGS__)
-#define tty_info(tty, f, ...)	tty_msg(pr_info, tty, f, ##__VA_ARGS__)
-#define tty_notice(tty, f, ...)	tty_msg(pr_notice, tty, f, ##__VA_ARGS__)
-#define tty_warn(tty, f, ...)	tty_msg(pr_warn, tty, f, ##__VA_ARGS__)
-#define tty_err(tty, f, ...)	tty_msg(pr_err, tty, f, ##__VA_ARGS__)
-
-#define tty_info_ratelimited(tty, f, ...) \
-		tty_msg(pr_info_ratelimited, tty, f, ##__VA_ARGS__)
+#define tty_debug(tty, f, args...)					\
+	do {								\
+		printk(KERN_DEBUG "%s: %s: " f, __func__,		\
+		       tty_name(tty), ##args);				\
+	} while (0)
 
 #endif

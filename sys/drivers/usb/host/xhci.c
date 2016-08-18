@@ -31,7 +31,6 @@
 
 #include "xhci.h"
 #include "xhci-trace.h"
-#include "xhci-mtk.h"
 
 #define DRIVER_AUTHOR "Sarah Sharp"
 #define DRIVER_DESC "'eXtensible' Host Controller (xHC) Driver"
@@ -147,7 +146,8 @@ static int xhci_start(struct xhci_hcd *xhci)
 				"waited %u microseconds.\n",
 				XHCI_MAX_HALT_USEC);
 	if (!ret)
-		xhci->xhc_state &= ~(XHCI_STATE_HALTED | XHCI_STATE_DYING);
+		/* clear state flags. Including dying, halted or removing */
+		xhci->xhc_state = 0;
 
 	return ret;
 }
@@ -635,11 +635,7 @@ int xhci_run(struct usb_hcd *hcd)
 			"// Set the interrupt modulation register");
 	temp = readl(&xhci->ir_set->irq_control);
 	temp &= ~ER_IRQ_INTERVAL_MASK;
-	/*
-	 * the increment interval is 8 times as much as that defined
-	 * in xHCI spec on MTK's controller
-	 */
-	temp |= (u32) ((xhci->quirks & XHCI_MTK_HOST) ? 20 : 160);
+	temp |= (u32) 160;
 	writel(temp, &xhci->ir_set->irq_control);
 
 	/* Set the HCD state before we enable the irqs */
@@ -684,20 +680,23 @@ void xhci_stop(struct usb_hcd *hcd)
 	u32 temp;
 	struct xhci_hcd *xhci = hcd_to_xhci(hcd);
 
-	if (xhci->xhc_state & XHCI_STATE_HALTED)
-		return;
-
 	mutex_lock(&xhci->mutex);
-	spin_lock_irq(&xhci->lock);
-	xhci->xhc_state |= XHCI_STATE_HALTED;
-	xhci->cmd_ring_state = CMD_RING_STATE_STOPPED;
 
-	/* Make sure the xHC is halted for a USB3 roothub
-	 * (xhci_stop() could be called as part of failed init).
-	 */
-	xhci_halt(xhci);
-	xhci_reset(xhci);
-	spin_unlock_irq(&xhci->lock);
+	if (!(xhci->xhc_state & XHCI_STATE_HALTED)) {
+		spin_lock_irq(&xhci->lock);
+
+		xhci->xhc_state |= XHCI_STATE_HALTED;
+		xhci->cmd_ring_state = CMD_RING_STATE_STOPPED;
+		xhci_halt(xhci);
+		xhci_reset(xhci);
+
+		spin_unlock_irq(&xhci->lock);
+	}
+
+	if (!usb_hcd_is_primary_hcd(hcd)) {
+		mutex_unlock(&xhci->mutex);
+		return;
+	}
 
 	xhci_cleanup_msix(xhci);
 
@@ -1108,8 +1107,8 @@ int xhci_resume(struct xhci_hcd *xhci, bool hibernated)
 		/* Resume root hubs only when have pending events. */
 		status = readl(&xhci->op_regs->status);
 		if (status & STS_EINT) {
-			usb_hcd_resume_root_hub(hcd);
 			usb_hcd_resume_root_hub(xhci->shared_hcd);
+			usb_hcd_resume_root_hub(hcd);
 		}
 	}
 
@@ -1124,10 +1123,10 @@ int xhci_resume(struct xhci_hcd *xhci, bool hibernated)
 
 	/* Re-enable port polling. */
 	xhci_dbg(xhci, "%s: starting port polling.\n", __func__);
-	set_bit(HCD_FLAG_POLL_RH, &hcd->flags);
-	usb_hcd_poll_rh_status(hcd);
 	set_bit(HCD_FLAG_POLL_RH, &xhci->shared_hcd->flags);
 	usb_hcd_poll_rh_status(xhci->shared_hcd);
+	set_bit(HCD_FLAG_POLL_RH, &hcd->flags);
+	usb_hcd_poll_rh_status(hcd);
 
 	return retval;
 }
@@ -1705,9 +1704,6 @@ int xhci_drop_endpoint(struct usb_hcd *hcd, struct usb_device *udev,
 
 	xhci_endpoint_zero(xhci, xhci->devs[udev->slot_id], ep);
 
-	if (xhci->quirks & XHCI_MTK_HOST)
-		xhci_mtk_drop_ep_quirk(hcd, udev, ep);
-
 	xhci_dbg(xhci, "drop ep 0x%x, slot id %d, new drop flags = %#x, new add flags = %#x\n",
 			(unsigned int) ep->desc.bEndpointAddress,
 			udev->slot_id,
@@ -1801,15 +1797,6 @@ int xhci_add_endpoint(struct usb_hcd *hcd, struct usb_device *udev,
 		dev_dbg(&udev->dev, "%s - could not initialize ep %#x\n",
 				__func__, ep->desc.bEndpointAddress);
 		return -ENOMEM;
-	}
-
-	if (xhci->quirks & XHCI_MTK_HOST) {
-		ret = xhci_mtk_add_ep_quirk(hcd, udev, ep);
-		if (ret < 0) {
-			xhci_free_or_cache_endpoint_ring(xhci,
-				virt_dev, ep_index);
-			return ret;
-		}
 	}
 
 	ctrl_ctx->add_flags |= cpu_to_le32(added_ctxs);
@@ -2770,7 +2757,8 @@ int xhci_check_bandwidth(struct usb_hcd *hcd, struct usb_device *udev)
 	if (ret <= 0)
 		return ret;
 	xhci = hcd_to_xhci(hcd);
-	if (xhci->xhc_state & XHCI_STATE_DYING)
+	if ((xhci->xhc_state & XHCI_STATE_DYING) ||
+		(xhci->xhc_state & XHCI_STATE_REMOVING))
 		return -ENODEV;
 
 	xhci_dbg(xhci, "%s called for udev %p\n", __func__, udev);
@@ -3817,7 +3805,7 @@ static int xhci_setup_device(struct usb_hcd *hcd, struct usb_device *udev,
 
 	mutex_lock(&xhci->mutex);
 
-	if (xhci->xhc_state)	/* dying or halted */
+	if (xhci->xhc_state)	/* dying, removing or halted */
 		goto out;
 
 	if (!udev->slot_id) {
@@ -4979,7 +4967,7 @@ EXPORT_SYMBOL_GPL(xhci_gen_setup);
 static const struct hc_driver xhci_hc_driver = {
 	.description =		"xhci-hcd",
 	.product_desc =		"xHCI Host Controller",
-	.hcd_priv_size =	sizeof(struct xhci_hcd),
+	.hcd_priv_size =	sizeof(struct xhci_hcd *),
 
 	/*
 	 * generic hardware linkage

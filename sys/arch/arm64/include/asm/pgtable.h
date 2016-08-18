@@ -168,16 +168,6 @@ extern struct page *empty_zero_page;
 #define pte_valid(pte)		(!!(pte_val(pte) & PTE_VALID))
 #define pte_valid_not_user(pte) \
 	((pte_val(pte) & (PTE_VALID | PTE_USER)) == PTE_VALID)
-#define pte_valid_young(pte) \
-	((pte_val(pte) & (PTE_VALID | PTE_AF)) == (PTE_VALID | PTE_AF))
-
-/*
- * Could the pte be present in the TLB? We must check mm_tlb_flush_pending
- * so that we don't erroneously return false for pages that have been
- * remapped as PROT_NONE but are yet to be flushed from the TLB.
- */
-#define pte_accessible(mm, pte)	\
-	(mm_tlb_flush_pending(mm) ? pte_present(pte) : pte_valid_young(pte))
 
 static inline pte_t clear_pte_bit(pte_t pte, pgprot_t prot)
 {
@@ -228,18 +218,12 @@ static inline pte_t pte_mkspecial(pte_t pte)
 
 static inline pte_t pte_mkcont(pte_t pte)
 {
-	pte = set_pte_bit(pte, __pgprot(PTE_CONT));
-	return set_pte_bit(pte, __pgprot(PTE_TYPE_PAGE));
+	return set_pte_bit(pte, __pgprot(PTE_CONT));
 }
 
 static inline pte_t pte_mknoncont(pte_t pte)
 {
 	return clear_pte_bit(pte, __pgprot(PTE_CONT));
-}
-
-static inline pmd_t pmd_mkcont(pmd_t pmd)
-{
-	return __pmd(pmd_val(pmd) | PMD_SECT_CONT);
 }
 
 static inline void set_pte(pte_t *ptep, pte_t pte)
@@ -279,7 +263,7 @@ extern void __sync_icache_dcache(pte_t pteval, unsigned long addr);
 static inline void set_pte_at(struct mm_struct *mm, unsigned long addr,
 			      pte_t *ptep, pte_t pte)
 {
-	if (pte_valid(pte)) {
+	if (pte_present(pte)) {
 		if (pte_sw_dirty(pte) && pte_write(pte))
 			pte_val(pte) &= ~PTE_RDONLY;
 		else
@@ -315,7 +299,7 @@ static inline void set_pte_at(struct mm_struct *mm, unsigned long addr,
 /*
  * Hugetlb definitions.
  */
-#define HUGE_MAX_HSTATE		4
+#define HUGE_MAX_HSTATE		2
 #define HPAGE_SHIFT		PMD_SHIFT
 #define HPAGE_SIZE		(_AC(1, UL) << HPAGE_SHIFT)
 #define HPAGE_MASK		(~(HPAGE_SIZE - 1))
@@ -354,17 +338,25 @@ static inline pgprot_t mk_sect_prot(pgprot_t prot)
 
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
 #define pmd_trans_huge(pmd)	(pmd_val(pmd) && !(pmd_val(pmd) & PMD_TABLE_BIT))
+#define pmd_trans_splitting(pmd)	pte_special(pmd_pte(pmd))
+#ifdef CONFIG_HAVE_RCU_TABLE_FREE
+#define __HAVE_ARCH_PMDP_SPLITTING_FLUSH
+struct vm_area_struct;
+void pmdp_splitting_flush(struct vm_area_struct *vma, unsigned long address,
+			  pmd_t *pmdp);
+#endif /* CONFIG_HAVE_RCU_TABLE_FREE */
 #endif /* CONFIG_TRANSPARENT_HUGEPAGE */
 
+#define pmd_present(pmd)	pte_present(pmd_pte(pmd))
 #define pmd_dirty(pmd)		pte_dirty(pmd_pte(pmd))
 #define pmd_young(pmd)		pte_young(pmd_pte(pmd))
 #define pmd_wrprotect(pmd)	pte_pmd(pte_wrprotect(pmd_pte(pmd)))
+#define pmd_mksplitting(pmd)	pte_pmd(pte_mkspecial(pmd_pte(pmd)))
 #define pmd_mkold(pmd)		pte_pmd(pte_mkold(pmd_pte(pmd)))
 #define pmd_mkwrite(pmd)	pte_pmd(pte_mkwrite(pmd_pte(pmd)))
-#define pmd_mkclean(pmd)       pte_pmd(pte_mkclean(pmd_pte(pmd)))
 #define pmd_mkdirty(pmd)	pte_pmd(pte_mkdirty(pmd_pte(pmd)))
 #define pmd_mkyoung(pmd)	pte_pmd(pte_mkyoung(pmd_pte(pmd)))
-#define pmd_mknotpresent(pmd)	(__pmd(pmd_val(pmd) & ~PMD_TYPE_MASK))
+#define pmd_mknotpresent(pmd)	(__pmd(pmd_val(pmd) & ~PMD_SECT_VALID))
 
 #define __HAVE_ARCH_PMD_WRITE
 #define pmd_write(pmd)		pte_write(pmd_pte(pmd))
@@ -403,7 +395,6 @@ extern pgprot_t phys_mem_access_prot(struct file *file, unsigned long pfn,
 				     unsigned long size, pgprot_t vma_prot);
 
 #define pmd_none(pmd)		(!pmd_val(pmd))
-#define pmd_present(pmd)	(pmd_val(pmd))
 
 #define pmd_bad(pmd)		(!(pmd_val(pmd) & 2))
 
@@ -547,6 +538,21 @@ static inline pmd_t pmd_modify(pmd_t pmd, pgprot_t newprot)
 }
 
 #ifdef CONFIG_ARM64_HW_AFDBM
+#define __HAVE_ARCH_PTEP_SET_ACCESS_FLAGS
+extern int ptep_set_access_flags(struct vm_area_struct *vma,
+				 unsigned long address, pte_t *ptep,
+				 pte_t entry, int dirty);
+
+#ifdef CONFIG_TRANSPARENT_HUGEPAGE
+#define __HAVE_ARCH_PMDP_SET_ACCESS_FLAGS
+static inline int pmdp_set_access_flags(struct vm_area_struct *vma,
+					unsigned long address, pmd_t *pmdp,
+					pmd_t entry, int dirty)
+{
+	return ptep_set_access_flags(vma, address, (pte_t *)pmdp, pmd_pte(entry), dirty);
+}
+#endif
+
 /*
  * Atomic pte/pmd modifications.
  */
@@ -599,9 +605,9 @@ static inline pte_t ptep_get_and_clear(struct mm_struct *mm,
 }
 
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
-#define __HAVE_ARCH_PMDP_GET_AND_CLEAR
-static inline pmd_t pmdp_get_and_clear(struct mm_struct *mm,
-				       unsigned long address, pmd_t *pmdp)
+#define __HAVE_ARCH_PMDP_HUGE_GET_AND_CLEAR
+static inline pmd_t pmdp_huge_get_and_clear(struct mm_struct *mm,
+					    unsigned long address, pmd_t *pmdp)
 {
 	return pte_pmd(ptep_get_and_clear(mm, address, (pte_t *)pmdp));
 }
@@ -649,6 +655,7 @@ extern pgd_t idmap_pg_dir[PTRS_PER_PGD];
  *	bits 0-1:	present (must be zero)
  *	bits 2-7:	swap type
  *	bits 8-57:	swap offset
+ *	bit  58:	PTE_PROT_NONE (must be zero)
  */
 #define __SWP_TYPE_SHIFT	2
 #define __SWP_TYPE_BITS		6
@@ -674,8 +681,7 @@ extern int kern_addr_valid(unsigned long addr);
 
 #include <asm-generic/pgtable.h>
 
-void pgd_cache_init(void);
-#define pgtable_cache_init	pgd_cache_init
+#define pgtable_cache_init() do { } while (0)
 
 /*
  * On AArch64, the cache coherency is handled via the set_pte_at() function.

@@ -618,8 +618,8 @@ static void nbd_request_handler(struct request_queue *q)
 			req, req->cmd_type);
 
 		if (unlikely(!nbd->sock)) {
-			dev_err(disk_to_dev(nbd->disk),
-				"Attempted send on closed socket\n");
+			dev_err_ratelimited(disk_to_dev(nbd->disk),
+					    "Attempted send on closed socket\n");
 			req->errors++;
 			nbd_end_request(nbd, req);
 			spin_lock_irq(q->queue_lock);
@@ -827,7 +827,6 @@ static const struct block_device_operations nbd_fops =
 {
 	.owner =	THIS_MODULE,
 	.ioctl =	nbd_ioctl,
-	.compat_ioctl =	nbd_ioctl,
 };
 
 #if IS_ENABLED(CONFIG_DEBUG_FS)

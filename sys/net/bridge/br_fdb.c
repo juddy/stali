@@ -135,7 +135,6 @@ static void fdb_del_external_learn(struct net_bridge_fdb_entry *f)
 {
 	struct switchdev_obj_port_fdb fdb = {
 		.obj = {
-			.orig_dev = f->dst->dev,
 			.id = SWITCHDEV_OBJ_ID_PORT_FDB,
 			.flags = SWITCHDEV_F_DEFER,
 		},
@@ -279,6 +278,8 @@ void br_fdb_change_mac_address(struct net_bridge *br, const u8 *newaddr)
 	 * change from under us.
 	 */
 	list_for_each_entry(v, &vg->vlan_list, vlist) {
+		if (!br_vlan_should_use(v))
+			continue;
 		f = __br_fdb_get(br, br->dev->dev_addr, v->vid);
 		if (f && f->is_local && !f->dst)
 			fdb_delete_local(br, NULL, f);
@@ -723,8 +724,6 @@ int br_fdb_dump(struct sk_buff *skb,
 		struct net_bridge_fdb_entry *f;
 
 		hlist_for_each_entry_rcu(f, &br->hash[i], hlist) {
-			int err;
-
 			if (idx < cb->args[0])
 				goto skip;
 
@@ -743,15 +742,12 @@ int br_fdb_dump(struct sk_buff *skb,
 			if (!filter_dev && f->dst)
 				goto skip;
 
-			err = fdb_fill_info(skb, br, f,
-					    NETLINK_CB(cb->skb).portid,
-					    cb->nlh->nlmsg_seq,
-					    RTM_NEWNEIGH,
-					    NLM_F_MULTI);
-			if (err < 0) {
-				cb->args[1] = err;
+			if (fdb_fill_info(skb, br, f,
+					  NETLINK_CB(cb->skb).portid,
+					  cb->nlh->nlmsg_seq,
+					  RTM_NEWNEIGH,
+					  NLM_F_MULTI) < 0)
 				break;
-			}
 skip:
 			++idx;
 		}

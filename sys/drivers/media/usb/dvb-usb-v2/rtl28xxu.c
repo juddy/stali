@@ -181,17 +181,11 @@ static int rtl28xxu_i2c_xfer(struct i2c_adapter *adap, struct i2c_msg msg[],
 			goto err_mutex_unlock;
 		} else if (msg[0].addr == 0x10) {
 			/* method 1 - integrated demod */
-			if (msg[0].buf[0] == 0x00) {
-				/* return demod page from driver cache */
-				msg[1].buf[0] = dev->page;
-				ret = 0;
-			} else {
-				req.value = (msg[0].buf[0] << 8) | (msg[0].addr << 1);
-				req.index = CMD_DEMOD_RD | dev->page;
-				req.size = msg[1].len;
-				req.data = &msg[1].buf[0];
-				ret = rtl28xxu_ctrl_msg(d, &req);
-			}
+			req.value = (msg[0].buf[0] << 8) | (msg[0].addr << 1);
+			req.index = CMD_DEMOD_RD | dev->page;
+			req.size = msg[1].len;
+			req.data = &msg[1].buf[0];
+			ret = rtl28xxu_ctrl_msg(d, &req);
 		} else if (msg[0].len < 2) {
 			/* method 2 - old I2C */
 			req.value = (msg[0].buf[0] << 8) | (msg[0].addr << 1);
@@ -1906,6 +1900,10 @@ static const struct usb_device_id rtl28xxu_id_table[] = {
 		&rtl28xxu_props, "Compro VideoMate U650F", NULL) },
 	{ DVB_USB_DEVICE(USB_VID_KWORLD_2, 0xd394,
 		&rtl28xxu_props, "MaxMedia HU394-T", NULL) },
+	{ DVB_USB_DEVICE(USB_VID_GTEK, 0xb803 /*USB_PID_AUGUST_DVBT205*/,
+		&rtl28xxu_props, "August DVB-T 205", NULL) },
+	{ DVB_USB_DEVICE(USB_VID_GTEK, 0xa803 /*USB_PID_AUGUST_DVBT205*/,
+		&rtl28xxu_props, "August DVB-T 205", NULL) },
 	{ DVB_USB_DEVICE(USB_VID_LEADTEK, 0x6a03,
 		&rtl28xxu_props, "Leadtek WinFast DTV Dongle mini", NULL) },
 	{ DVB_USB_DEVICE(USB_VID_GTEK, USB_PID_CPYTO_REDI_PC50A,

@@ -369,7 +369,7 @@ ncp_lookup_validate(struct dentry *dentry, unsigned int flags)
 	if (!res) {
 		struct inode *inode = d_inode(dentry);
 
-		inode_lock(inode);
+		mutex_lock(&inode->i_mutex);
 		if (finfo.i.dirEntNum == NCP_FINFO(inode)->dirEntNum) {
 			ncp_new_dentry(dentry);
 			val=1;
@@ -377,7 +377,7 @@ ncp_lookup_validate(struct dentry *dentry, unsigned int flags)
 			ncp_dbg(2, "found, but dirEntNum changed\n");
 
 		ncp_update_inode2(inode, &finfo);
-		inode_unlock(inode);
+		mutex_unlock(&inode->i_mutex);
 	}
 
 finished:
@@ -639,9 +639,9 @@ ncp_fill_cache(struct file *file, struct dir_context *ctx,
 	} else {
 		struct inode *inode = d_inode(newdent);
 
-		inode_lock_nested(inode, I_MUTEX_CHILD);
+		mutex_lock_nested(&inode->i_mutex, I_MUTEX_CHILD);
 		ncp_update_inode2(inode, entry);
-		inode_unlock(inode);
+		mutex_unlock(&inode->i_mutex);
 	}
 
 	if (ctl.idx >= NCP_DIRCACHE_SIZE) {

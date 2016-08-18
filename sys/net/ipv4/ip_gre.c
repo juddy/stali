@@ -24,6 +24,7 @@
 #include <linux/tcp.h>
 #include <linux/udp.h>
 #include <linux/if_arp.h>
+#include <linux/mroute.h>
 #include <linux/if_vlan.h>
 #include <linux/init.h>
 #include <linux/in6.h>
@@ -179,6 +180,7 @@ static __be16 tnl_flags_to_gre_flags(__be16 tflags)
 	return flags;
 }
 
+/* Fills in tpi and returns header length to be pulled. */
 static int parse_gre_header(struct sk_buff *skb, struct tnl_ptk_info *tpi,
 			    bool *csum_err)
 {
@@ -238,7 +240,7 @@ static int parse_gre_header(struct sk_buff *skb, struct tnl_ptk_info *tpi,
 				return -EINVAL;
 		}
 	}
-	return iptunnel_pull_header(skb, hdr_len, tpi->proto);
+	return hdr_len;
 }
 
 static void ipgre_err(struct sk_buff *skb, u32 info,
@@ -341,7 +343,7 @@ static void gre_err(struct sk_buff *skb, u32 info)
 	struct tnl_ptk_info tpi;
 	bool csum_err = false;
 
-	if (parse_gre_header(skb, &tpi, &csum_err)) {
+	if (parse_gre_header(skb, &tpi, &csum_err) < 0) {
 		if (!csum_err)		/* ignore csum errors. */
 			return;
 	}
@@ -419,6 +421,7 @@ static int gre_rcv(struct sk_buff *skb)
 {
 	struct tnl_ptk_info tpi;
 	bool csum_err = false;
+	int hdr_len;
 
 #ifdef CONFIG_NET_IPGRE_BROADCAST
 	if (ipv4_is_multicast(ip_hdr(skb)->daddr)) {
@@ -428,7 +431,10 @@ static int gre_rcv(struct sk_buff *skb)
 	}
 #endif
 
-	if (parse_gre_header(skb, &tpi, &csum_err) < 0)
+	hdr_len = parse_gre_header(skb, &tpi, &csum_err);
+	if (hdr_len < 0)
+		goto drop;
+	if (iptunnel_pull_header(skb, hdr_len, tpi.proto) < 0)
 		goto drop;
 
 	if (ipgre_rcv(skb, &tpi) == PACKET_RCVD)
@@ -561,9 +567,10 @@ static void gre_fb_xmit(struct sk_buff *skb, struct net_device *dev)
 		     tunnel_id_to_key(tun_info->key.tun_id), 0);
 
 	df = key->tun_flags & TUNNEL_DONT_FRAGMENT ?  htons(IP_DF) : 0;
-
-	iptunnel_xmit(skb->sk, rt, skb, fl.saddr, key->u.ipv4.dst, IPPROTO_GRE,
-		      key->tos, key->ttl, df, false);
+	err = iptunnel_xmit(skb->sk, rt, skb, fl.saddr,
+			    key->u.ipv4.dst, IPPROTO_GRE,
+			    key->tos, key->ttl, df, false);
+	iptunnel_xmit_stats(err, &dev->stats, dev->tstats);
 	return;
 
 err_free_rt:
@@ -1054,9 +1061,8 @@ static const struct net_device_ops gre_tap_netdev_ops = {
 static void ipgre_tap_setup(struct net_device *dev)
 {
 	ether_setup(dev);
-	dev->netdev_ops	= &gre_tap_netdev_ops;
-	dev->priv_flags &= ~IFF_TX_SKB_SHARING;
-	dev->priv_flags	|= IFF_LIVE_ADDR_CHANGE;
+	dev->netdev_ops		= &gre_tap_netdev_ops;
+	dev->priv_flags 	|= IFF_LIVE_ADDR_CHANGE;
 	ip_tunnel_setup(dev, gre_tap_net_id);
 }
 

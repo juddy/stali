@@ -34,21 +34,22 @@ __show_trace(unsigned long sp, unsigned long low, unsigned long high)
 	unsigned long addr;
 
 	while (1) {
+		sp = sp & PSW_ADDR_INSN;
 		if (sp < low || sp > high - sizeof(*sf))
 			return sp;
 		sf = (struct stack_frame *) sp;
-		addr = sf->gprs[8];
+		addr = sf->gprs[8] & PSW_ADDR_INSN;
 		printk("([<%016lx>] %pSR)\n", addr, (void *)addr);
 		/* Follow the backchain. */
 		while (1) {
 			low = sp;
-			sp = sf->back_chain;
+			sp = sf->back_chain & PSW_ADDR_INSN;
 			if (!sp)
 				break;
 			if (sp <= low || sp > high - sizeof(*sf))
 				return sp;
 			sf = (struct stack_frame *) sp;
-			addr = sf->gprs[8];
+			addr = sf->gprs[8] & PSW_ADDR_INSN;
 			printk(" [<%016lx>] %pSR\n", addr, (void *)addr);
 		}
 		/* Zero backchain detected, check for interrupt frame. */
@@ -56,7 +57,7 @@ __show_trace(unsigned long sp, unsigned long low, unsigned long high)
 		if (sp <= low || sp > high - sizeof(*regs))
 			return sp;
 		regs = (struct pt_regs *) sp;
-		addr = regs->psw.addr;
+		addr = regs->psw.addr & PSW_ADDR_INSN;
 		printk(" [<%016lx>] %pSR\n", addr, (void *)addr);
 		low = sp;
 		sp = regs->gprs[15];

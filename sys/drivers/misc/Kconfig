@@ -10,6 +10,14 @@ config SENSORS_LIS3LV02D
 	select INPUT_POLLDEV
 	default n
 
+config BCM2835_SMI
+	tristate "Broadcom 283x Secondary Memory Interface driver"
+	depends on MACH_BCM2708 || MACH_BCM2709 || ARCH_BCM2835
+	default m
+	help
+		Driver for enabling and using Broadcom's Secondary/Slow Memory Interface.
+		Appears as /dev/bcm2835_smi. For ioctl interface see drivers/misc/bcm2835_smi.h
+
 config AD525X_DPOT
 	tristate "Analog Devices Digital Potentiometers"
 	depends on (I2C || SPI) && SYSFS
@@ -95,7 +103,6 @@ config DUMMY_IRQ
 config IBM_ASM
 	tristate "Device driver for IBM RSA service processor"
 	depends on X86 && PCI && INPUT
-	depends on SERIAL_8250 || SERIAL_8250=n
 	---help---
 	  This option enables device driver support for in-band access to the
 	  IBM RSA (Condor) service processor in eServer xSeries systems.
@@ -440,7 +447,7 @@ config ARM_CHARLCD
 	  still useful.
 
 config BMP085
-	bool
+	tristate
 	depends on SYSFS
 
 config BMP085_I2C
@@ -534,6 +541,7 @@ source "drivers/misc/lis3lv02d/Kconfig"
 source "drivers/misc/altera-stapl/Kconfig"
 source "drivers/misc/mei/Kconfig"
 source "drivers/misc/vmw_vmci/Kconfig"
+source "drivers/misc/vc04_services/Kconfig"
 source "drivers/misc/mic/Kconfig"
 source "drivers/misc/genwqe/Kconfig"
 source "drivers/misc/echo/Kconfig"

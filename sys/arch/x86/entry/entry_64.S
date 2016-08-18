@@ -520,7 +520,9 @@ END(irq_entries_start)
 	 */
 	TRACE_IRQS_OFF
 
-	CALL_enter_from_user_mode
+#ifdef CONFIG_CONTEXT_TRACKING
+	call enter_from_user_mode
+#endif
 
 1:
 	/*
@@ -1064,7 +1066,9 @@ ENTRY(error_entry)
 	 * (which can take locks).
 	 */
 	TRACE_IRQS_OFF
-	CALL_enter_from_user_mode
+#ifdef CONFIG_CONTEXT_TRACKING
+	call enter_from_user_mode
+#endif
 	ret
 
 .Lerror_entry_done:

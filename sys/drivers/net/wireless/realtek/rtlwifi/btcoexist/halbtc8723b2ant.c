@@ -1203,7 +1203,6 @@ static void btc8723b2ant_set_ant_path(struct btc_coexist *btcoexist,
 
 		/* Force GNT_BT to low */
 		btcoexist->btc_write_1byte_bitmask(btcoexist, 0x765, 0x18, 0x0);
-		btcoexist->btc_write_2byte(btcoexist, 0x948, 0x0);
 
 		if (board_info->btdm_ant_pos == BTC_ANTENNA_AT_MAIN_PORT) {
 			/* tell firmware "no antenna inverse" */
@@ -1211,19 +1210,25 @@ static void btc8723b2ant_set_ant_path(struct btc_coexist *btcoexist,
 			h2c_parameter[1] = 1;  /* ext switch type */
 			btcoexist->btc_fill_h2c(btcoexist, 0x65, 2,
 						h2c_parameter);
+			btcoexist->btc_write_2byte(btcoexist, 0x948, 0x0);
 		} else {
 			/* tell firmware "antenna inverse" */
 			h2c_parameter[0] = 1;
 			h2c_parameter[1] = 1;  /* ext switch type */
 			btcoexist->btc_fill_h2c(btcoexist, 0x65, 2,
 						h2c_parameter);
+			btcoexist->btc_write_2byte(btcoexist, 0x948, 0x280);
 		}
 	}
 
 	/* ext switch setting */
 	if (use_ext_switch) {
 		/* fixed internal switch S1->WiFi, S0->BT */
-		btcoexist->btc_write_2byte(btcoexist, 0x948, 0x0);
+		if (board_info->btdm_ant_pos == BTC_ANTENNA_AT_MAIN_PORT)
+			btcoexist->btc_write_2byte(btcoexist, 0x948, 0x0);
+		else
+			btcoexist->btc_write_2byte(btcoexist, 0x948, 0x280);
+
 		switch (antpos_type) {
 		case BTC_ANT_WIFI_AT_MAIN:
 			/* ext switch main at wifi */
@@ -3215,8 +3220,9 @@ void ex_btc8723b2ant_display_coex_info(struct btc_coexist *btcoexist)
 		   "Dot11 channel / HsChnl(HsMode)",
 		   wifi_dot11_chnl, wifi_hs_chnl, bt_hs_on);
 
-	RT_TRACE(rtlpriv, COMP_INIT, DBG_DMESG, "\r\n %-35s = %3ph ",
-		   "H2C Wifi inform bt chnl Info", coex_dm->wifi_chnl_info);
+	RT_TRACE(rtlpriv, COMP_INIT, DBG_DMESG, "\r\n %-35s = %02x %02x %02x ",
+		   "H2C Wifi inform bt chnl Info", coex_dm->wifi_chnl_info[0],
+		   coex_dm->wifi_chnl_info[1], coex_dm->wifi_chnl_info[2]);
 
 	btcoexist->btc_get(btcoexist, BTC_GET_S4_WIFI_RSSI, &wifi_rssi);
 	btcoexist->btc_get(btcoexist, BTC_GET_S4_HS_RSSI, &bt_hs_rssi);
@@ -3258,9 +3264,16 @@ void ex_btc8723b2ant_display_coex_info(struct btc_coexist *btcoexist)
 	for (i = 0; i < BT_INFO_SRC_8723B_2ANT_MAX; i++) {
 		if (coex_sta->bt_info_c2h_cnt[i]) {
 			RT_TRACE(rtlpriv, COMP_INIT, DBG_DMESG,
-				   "\r\n %-35s = %7ph(%d)",
+				   "\r\n %-35s = %02x %02x %02x "
+				   "%02x %02x %02x %02x(%d)",
 				   glbt_info_src_8723b_2ant[i],
-				   coex_sta->bt_info_c2h[i],
+				   coex_sta->bt_info_c2h[i][0],
+				   coex_sta->bt_info_c2h[i][1],
+				   coex_sta->bt_info_c2h[i][2],
+				   coex_sta->bt_info_c2h[i][3],
+				   coex_sta->bt_info_c2h[i][4],
+				   coex_sta->bt_info_c2h[i][5],
+				   coex_sta->bt_info_c2h[i][6],
 				   coex_sta->bt_info_c2h_cnt[i]);
 		}
 	}
@@ -3288,8 +3301,10 @@ void ex_btc8723b2ant_display_coex_info(struct btc_coexist *btcoexist)
 
 	ps_tdma_case = coex_dm->cur_ps_tdma;
 	RT_TRACE(rtlpriv, COMP_INIT, DBG_DMESG,
-		   "\r\n %-35s = %5ph case-%d (auto:%d)",
-		   "PS TDMA", coex_dm->ps_tdma_para,
+		   "\r\n %-35s = %02x %02x %02x %02x %02x case-%d (auto:%d)",
+		   "PS TDMA", coex_dm->ps_tdma_para[0],
+		   coex_dm->ps_tdma_para[1], coex_dm->ps_tdma_para[2],
+		   coex_dm->ps_tdma_para[3], coex_dm->ps_tdma_para[4],
 		   ps_tdma_case, coex_dm->auto_tdma_adjust);
 
 	RT_TRACE(rtlpriv, COMP_INIT, DBG_DMESG, "\r\n %-35s = %d/ %d ",

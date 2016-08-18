@@ -929,6 +929,11 @@ static int snd_timer_dev_register(struct snd_device *dev)
 	return 0;
 }
 
+/* just for reference in snd_timer_dev_disconnect() below */
+static void snd_timer_user_ccallback(struct snd_timer_instance *timeri,
+				     int event, struct timespec *tstamp,
+				     unsigned long resolution);
+
 static int snd_timer_dev_disconnect(struct snd_device *device)
 {
 	struct snd_timer *timer = device->device_data;
@@ -938,8 +943,13 @@ static int snd_timer_dev_disconnect(struct snd_device *device)
 	list_del_init(&timer->device_list);
 	/* wake up pending sleepers */
 	list_for_each_entry(ti, &timer->open_list_head, open_list) {
-		if (ti->disconnect)
-			ti->disconnect(ti);
+		/* FIXME: better to have a ti.disconnect() op */
+		if (ti->ccallback == snd_timer_user_ccallback) {
+			struct snd_timer_user *tu = ti->callback_data;
+
+			tu->disconnected = true;
+			wake_up(&tu->qchange_sleep);
+		}
 	}
 	mutex_unlock(&register_mutex);
 	return 0;
@@ -1041,8 +1051,8 @@ static int snd_timer_s_start(struct snd_timer * timer)
 		njiff += timer->sticks - priv->correction;
 		priv->correction = 0;
 	}
-	priv->last_expires = priv->tlist.expires = njiff;
-	add_timer(&priv->tlist);
+	priv->last_expires = njiff;
+	mod_timer(&priv->tlist, njiff);
 	return 0;
 }
 
@@ -1062,21 +1072,11 @@ static int snd_timer_s_stop(struct snd_timer * timer)
 	return 0;
 }
 
-static int snd_timer_s_close(struct snd_timer *timer)
-{
-	struct snd_timer_system_private *priv;
-
-	priv = (struct snd_timer_system_private *)timer->private_data;
-	del_timer_sync(&priv->tlist);
-	return 0;
-}
-
 static struct snd_timer_hardware snd_timer_system =
 {
 	.flags =	SNDRV_TIMER_HW_FIRST | SNDRV_TIMER_HW_TASKLET,
 	.resolution =	1000000000L / HZ,
 	.ticks =	10000000L,
-	.close =	snd_timer_s_close,
 	.start =	snd_timer_s_start,
 	.stop =		snd_timer_s_stop
 };
@@ -1247,6 +1247,7 @@ static void snd_timer_user_ccallback(struct snd_timer_instance *timeri,
 		tu->tstamp = *tstamp;
 	if ((tu->filter & (1 << event)) == 0 || !tu->tread)
 		return;
+	memset(&r1, 0, sizeof(r1));
 	r1.event = event;
 	r1.tstamp = *tstamp;
 	r1.val = resolution;
@@ -1254,14 +1255,6 @@ static void snd_timer_user_ccallback(struct snd_timer_instance *timeri,
 	snd_timer_user_append_to_tqueue(tu, &r1);
 	spin_unlock_irqrestore(&tu->qlock, flags);
 	kill_fasync(&tu->fasync, SIGIO, POLL_IN);
-	wake_up(&tu->qchange_sleep);
-}
-
-static void snd_timer_user_disconnect(struct snd_timer_instance *timeri)
-{
-	struct snd_timer_user *tu = timeri->callback_data;
-
-	tu->disconnected = true;
 	wake_up(&tu->qchange_sleep);
 }
 
@@ -1289,6 +1282,7 @@ static void snd_timer_user_tinterrupt(struct snd_timer_instance *timeri,
 	}
 	if ((tu->filter & (1 << SNDRV_TIMER_EVENT_RESOLUTION)) &&
 	    tu->last_resolution != resolution) {
+		memset(&r1, 0, sizeof(r1));
 		r1.event = SNDRV_TIMER_EVENT_RESOLUTION;
 		r1.tstamp = tstamp;
 		r1.val = resolution;
@@ -1638,7 +1632,6 @@ static int snd_timer_user_tselect(struct file *file,
 			? snd_timer_user_tinterrupt : snd_timer_user_interrupt;
 		tu->timeri->ccallback = snd_timer_user_ccallback;
 		tu->timeri->callback_data = (void *)tu;
-		tu->timeri->disconnect = snd_timer_user_disconnect;
 	}
 
       __err:
@@ -1755,6 +1748,7 @@ static int snd_timer_user_params(struct file *file,
 	if (tu->timeri->flags & SNDRV_TIMER_IFLG_EARLY_EVENT) {
 		if (tu->tread) {
 			struct snd_timer_tread tread;
+			memset(&tread, 0, sizeof(tread));
 			tread.event = SNDRV_TIMER_EVENT_EARLY;
 			tread.tstamp.tv_sec = 0;
 			tread.tstamp.tv_nsec = 0;
@@ -1970,6 +1964,7 @@ static ssize_t snd_timer_user_read(struct file *file, char __user *buffer,
 
 		qhead = tu->qhead++;
 		tu->qhead %= tu->queue_size;
+		tu->qused--;
 		spin_unlock_irq(&tu->qlock);
 
 		if (tu->tread) {
@@ -1983,7 +1978,6 @@ static ssize_t snd_timer_user_read(struct file *file, char __user *buffer,
 		}
 
 		spin_lock_irq(&tu->qlock);
-		tu->qused--;
 		if (err < 0)
 			goto _error;
 		result += unit;

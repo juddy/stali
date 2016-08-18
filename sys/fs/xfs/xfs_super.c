@@ -137,7 +137,7 @@ static const match_table_t tokens = {
 };
 
 
-STATIC int
+STATIC unsigned long
 suffix_kstrtoint(char *s, unsigned int base, int *res)
 {
 	int	last, shift_left_factor = 0, _res;
@@ -1233,6 +1233,16 @@ xfs_fs_remount(
 			return -EINVAL;
 		}
 
+		if (XFS_SB_VERSION_NUM(sbp) == XFS_SB_VERSION_5 &&
+		    xfs_sb_has_ro_compat_feature(sbp,
+					XFS_SB_FEAT_RO_COMPAT_UNKNOWN)) {
+			xfs_warn(mp,
+"ro->rw transition prohibited on unknown (0x%x) ro-compat filesystem",
+				(sbp->sb_features_ro_compat &
+					XFS_SB_FEAT_RO_COMPAT_UNKNOWN));
+			return -EINVAL;
+		}
+
 		mp->m_flags &= ~XFS_MOUNT_RDONLY;
 
 		/*
@@ -1714,8 +1724,8 @@ xfs_init_zones(void)
 
 	xfs_inode_zone =
 		kmem_zone_init_flags(sizeof(xfs_inode_t), "xfs_inode",
-			KM_ZONE_HWALIGN | KM_ZONE_RECLAIM | KM_ZONE_SPREAD |
-			KM_ZONE_ACCOUNT, xfs_fs_inode_init_once);
+			KM_ZONE_HWALIGN | KM_ZONE_RECLAIM | KM_ZONE_SPREAD,
+			xfs_fs_inode_init_once);
 	if (!xfs_inode_zone)
 		goto out_destroy_efi_zone;
 

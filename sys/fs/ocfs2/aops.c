@@ -2047,9 +2047,9 @@ static int ocfs2_try_to_free_truncate_log(struct ocfs2_super *osb,
 	int ret = 0;
 	unsigned int truncated_clusters;
 
-	inode_lock(osb->osb_tl_inode);
+	mutex_lock(&osb->osb_tl_inode->i_mutex);
 	truncated_clusters = osb->truncated_clusters;
-	inode_unlock(osb->osb_tl_inode);
+	mutex_unlock(&osb->osb_tl_inode->i_mutex);
 
 	/*
 	 * Check whether we can succeed in allocating if we free

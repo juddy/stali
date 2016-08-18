@@ -1496,7 +1496,7 @@ static void tipc_write_space(struct sock *sk)
 
 	rcu_read_lock();
 	wq = rcu_dereference(sk->sk_wq);
-	if (skwq_has_sleeper(wq))
+	if (wq_has_sleeper(wq))
 		wake_up_interruptible_sync_poll(&wq->wait, POLLOUT |
 						POLLWRNORM | POLLWRBAND);
 	rcu_read_unlock();
@@ -1513,7 +1513,7 @@ static void tipc_data_ready(struct sock *sk)
 
 	rcu_read_lock();
 	wq = rcu_dereference(sk->sk_wq);
-	if (skwq_has_sleeper(wq))
+	if (wq_has_sleeper(wq))
 		wake_up_interruptible_sync_poll(&wq->wait, POLLIN |
 						POLLRDNORM | POLLRDBAND);
 	rcu_read_unlock();
@@ -2813,6 +2813,9 @@ int tipc_nl_publ_dump(struct sk_buff *skb, struct netlink_callback *cb)
 		err = tipc_nlmsg_parse(cb->nlh, &attrs);
 		if (err)
 			return err;
+
+		if (!attrs[TIPC_NLA_SOCK])
+			return -EINVAL;
 
 		err = nla_parse_nested(sock, TIPC_NLA_SOCK_MAX,
 				       attrs[TIPC_NLA_SOCK],

@@ -31,11 +31,8 @@
 /* Was Intr taken in User Mode */
 #define AUX_IRQ_ACT_BIT_U	31
 
-/*
- * User space should be interruptable even by lowest prio interrupt
- * Safe even if actual interrupt priorities is fewer or even one
- */
-#define ARCV2_IRQ_DEF_PRIO	15
+/* 0 is highest level, but taken by FIRQs, if present in design */
+#define ARCV2_IRQ_DEF_PRIO		0
 
 /* seed value for status register */
 #define ISA_INIT_STATUS_BITS	(STATUS_IE_MASK | STATUS_AD_MASK | \

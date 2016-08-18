@@ -44,7 +44,6 @@
 #include <asm/kvm_emulate.h>
 #include <asm/kvm_coproc.h>
 #include <asm/kvm_psci.h>
-#include <asm/sections.h>
 
 #ifdef REQUIRES_VIRT
 __asm__(".arch_extension	virt");
@@ -59,11 +58,8 @@ static DEFINE_PER_CPU(struct kvm_vcpu *, kvm_arm_running_vcpu);
 
 /* The VMID used in the VTTBR */
 static atomic64_t kvm_vmid_gen = ATOMIC64_INIT(1);
-static u32 kvm_next_vmid;
-static unsigned int kvm_vmid_bits __read_mostly;
+static u8 kvm_next_vmid;
 static DEFINE_SPINLOCK(kvm_vmid_lock);
-
-static bool vgic_present;
 
 static void kvm_arm_set_running_vcpu(struct kvm_vcpu *vcpu)
 {
@@ -136,8 +132,7 @@ int kvm_arch_init_vm(struct kvm *kvm, unsigned long type)
 	kvm->arch.vmid_gen = 0;
 
 	/* The maximum number of VCPUs is limited by the host's GIC model */
-	kvm->arch.max_vcpus = vgic_present ?
-				kvm_vgic_get_max_vcpus() : KVM_MAX_VCPUS;
+	kvm->arch.max_vcpus = kvm_vgic_get_max_vcpus();
 
 	return ret;
 out_free_stage2_pgd:
@@ -177,8 +172,6 @@ int kvm_vm_ioctl_check_extension(struct kvm *kvm, long ext)
 	int r;
 	switch (ext) {
 	case KVM_CAP_IRQCHIP:
-		r = vgic_present;
-		break;
 	case KVM_CAP_IOEVENTFD:
 	case KVM_CAP_DEVICE_CTRL:
 	case KVM_CAP_USER_MEMORY:
@@ -440,12 +433,11 @@ static void update_vttbr(struct kvm *kvm)
 	kvm->arch.vmid_gen = atomic64_read(&kvm_vmid_gen);
 	kvm->arch.vmid = kvm_next_vmid;
 	kvm_next_vmid++;
-	kvm_next_vmid &= (1 << kvm_vmid_bits) - 1;
 
 	/* update vttbr to be used with the new vmid */
 	pgd_phys = virt_to_phys(kvm_get_hwpgd(kvm));
 	BUG_ON(pgd_phys & ~VTTBR_BADDR_MASK);
-	vmid = ((u64)(kvm->arch.vmid) << VTTBR_VMID_SHIFT) & VTTBR_VMID_MASK(kvm_vmid_bits);
+	vmid = ((u64)(kvm->arch.vmid) << VTTBR_VMID_SHIFT) & VTTBR_VMID_MASK;
 	kvm->arch.vttbr = pgd_phys | vmid;
 
 	spin_unlock(&kvm_vmid_lock);
@@ -611,7 +603,6 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu, struct kvm_run *run)
 		ret = kvm_call_hyp(__kvm_vcpu_run, vcpu);
 
 		vcpu->mode = OUTSIDE_GUEST_MODE;
-		vcpu->stat.exits++;
 		/*
 		 * Back from guest
 		 *************************************************************/
@@ -922,8 +913,6 @@ static int kvm_vm_ioctl_set_device_addr(struct kvm *kvm,
 
 	switch (dev_id) {
 	case KVM_ARM_DEVICE_VGIC_V2:
-		if (!vgic_present)
-			return -ENXIO;
 		return kvm_vgic_addr(kvm, type, &dev_addr->addr, true);
 	default:
 		return -ENODEV;
@@ -938,8 +927,6 @@ long kvm_arch_vm_ioctl(struct file *filp,
 
 	switch (ioctl) {
 	case KVM_CREATE_IRQCHIP: {
-		if (!vgic_present)
-			return -ENXIO;
 		return kvm_vgic_create(kvm, KVM_DEV_TYPE_ARM_VGIC_V2);
 	}
 	case KVM_ARM_SET_DEVICE_ADDR: {
@@ -1080,12 +1067,6 @@ static int init_hyp_mode(void)
 		goto out_free_mappings;
 	}
 
-	err = create_hyp_mappings(__start_rodata, __end_rodata);
-	if (err) {
-		kvm_err("Cannot map rodata section\n");
-		goto out_free_mappings;
-	}
-
 	/*
 	 * Map the Hyp stack pages
 	 */
@@ -1130,17 +1111,8 @@ static int init_hyp_mode(void)
 	 * Init HYP view of VGIC
 	 */
 	err = kvm_vgic_hyp_init();
-	switch (err) {
-	case 0:
-		vgic_present = true;
-		break;
-	case -ENODEV:
-	case -ENXIO:
-		vgic_present = false;
-		break;
-	default:
+	if (err)
 		goto out_free_context;
-	}
 
 	/*
 	 * Init HYP architected timer support
@@ -1154,10 +1126,6 @@ static int init_hyp_mode(void)
 #endif
 
 	kvm_perf_init();
-
-	/* set size of VMID supported by CPU */
-	kvm_vmid_bits = kvm_get_vmid_bits();
-	kvm_info("%d-bit VMID\n", kvm_vmid_bits);
 
 	kvm_info("Hyp mode initialized successfully\n");
 

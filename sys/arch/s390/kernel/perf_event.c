@@ -74,7 +74,7 @@ static unsigned long guest_is_user_mode(struct pt_regs *regs)
 
 static unsigned long instruction_pointer_guest(struct pt_regs *regs)
 {
-	return sie_block(regs)->gpsw.addr;
+	return sie_block(regs)->gpsw.addr & PSW_ADDR_INSN;
 }
 
 unsigned long perf_instruction_pointer(struct pt_regs *regs)
@@ -231,27 +231,29 @@ static unsigned long __store_trace(struct perf_callchain_entry *entry,
 	struct pt_regs *regs;
 
 	while (1) {
+		sp = sp & PSW_ADDR_INSN;
 		if (sp < low || sp > high - sizeof(*sf))
 			return sp;
 		sf = (struct stack_frame *) sp;
-		perf_callchain_store(entry, sf->gprs[8]);
+		perf_callchain_store(entry, sf->gprs[8] & PSW_ADDR_INSN);
 		/* Follow the backchain. */
 		while (1) {
 			low = sp;
-			sp = sf->back_chain;
+			sp = sf->back_chain & PSW_ADDR_INSN;
 			if (!sp)
 				break;
 			if (sp <= low || sp > high - sizeof(*sf))
 				return sp;
 			sf = (struct stack_frame *) sp;
-			perf_callchain_store(entry, sf->gprs[8]);
+			perf_callchain_store(entry,
+					     sf->gprs[8] & PSW_ADDR_INSN);
 		}
 		/* Zero backchain detected, check for interrupt frame. */
 		sp = (unsigned long) (sf + 1);
 		if (sp <= low || sp > high - sizeof(*regs))
 			return sp;
 		regs = (struct pt_regs *) sp;
-		perf_callchain_store(entry, sf->gprs[8]);
+		perf_callchain_store(entry, sf->gprs[8] & PSW_ADDR_INSN);
 		low = sp;
 		sp = regs->gprs[15];
 	}
@@ -260,13 +262,12 @@ static unsigned long __store_trace(struct perf_callchain_entry *entry,
 void perf_callchain_kernel(struct perf_callchain_entry *entry,
 			   struct pt_regs *regs)
 {
-	unsigned long head, frame_size;
+	unsigned long head;
 	struct stack_frame *head_sf;
 
 	if (user_mode(regs))
 		return;
 
-	frame_size = STACK_FRAME_OVERHEAD + sizeof(struct pt_regs);
 	head = regs->gprs[15];
 	head_sf = (struct stack_frame *) head;
 
@@ -274,9 +275,8 @@ void perf_callchain_kernel(struct perf_callchain_entry *entry,
 		return;
 
 	head = head_sf->back_chain;
-	head = __store_trace(entry, head,
-			     S390_lowcore.async_stack + frame_size - ASYNC_SIZE,
-			     S390_lowcore.async_stack + frame_size);
+	head = __store_trace(entry, head, S390_lowcore.async_stack - ASYNC_SIZE,
+			     S390_lowcore.async_stack);
 
 	__store_trace(entry, head, S390_lowcore.thread_info,
 		      S390_lowcore.thread_info + THREAD_SIZE);

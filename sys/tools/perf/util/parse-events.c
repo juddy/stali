@@ -4,9 +4,9 @@
 #include "../perf.h"
 #include "evlist.h"
 #include "evsel.h"
-#include <subcmd/parse-options.h>
+#include "parse-options.h"
 #include "parse-events.h"
-#include <subcmd/exec-cmd.h>
+#include "exec_cmd.h"
 #include "string.h"
 #include "symbol.h"
 #include "cache.h"
@@ -2101,11 +2101,11 @@ char *parse_events_formats_error_string(char *additional_terms)
 
 	/* valid terms */
 	if (additional_terms) {
-		if (!asprintf(&str, "valid terms: %s,%s",
-			      additional_terms, static_terms))
+		if (asprintf(&str, "valid terms: %s,%s",
+			     additional_terms, static_terms) < 0)
 			goto fail;
 	} else {
-		if (!asprintf(&str, "valid terms: %s", static_terms))
+		if (asprintf(&str, "valid terms: %s", static_terms) < 0)
 			goto fail;
 	}
 	return str;

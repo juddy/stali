@@ -656,9 +656,9 @@ static void *kvm_alloc_hwpgd(void)
  * kvm_alloc_stage2_pgd - allocate level-1 table for stage-2 translation.
  * @kvm:	The KVM struct pointer for the VM.
  *
- * Allocates only the stage-2 HW PGD level table(s) (can support either full
- * 40-bit input addresses or limited to 32-bit input addresses). Clears the
- * allocated pages.
+ * Allocates the 1st level table only of size defined by S2_PGD_ORDER (can
+ * support either full 40-bit input addresses or limited to 32-bit input
+ * addresses). Clears the allocated pages.
  *
  * Note we don't need locking here as this is only called when the VM is
  * created, which can only be done once.
@@ -886,11 +886,14 @@ static int stage2_set_pmd_huge(struct kvm *kvm, struct kvm_mmu_memory_cache
 	VM_BUG_ON(pmd_present(*pmd) && pmd_pfn(*pmd) != pmd_pfn(*new_pmd));
 
 	old_pmd = *pmd;
-	kvm_set_pmd(pmd, *new_pmd);
-	if (pmd_present(old_pmd))
+	if (pmd_present(old_pmd)) {
+		pmd_clear(pmd);
 		kvm_tlb_flush_vmid_ipa(kvm, addr);
-	else
+	} else {
 		get_page(virt_to_page(pmd));
+	}
+
+	kvm_set_pmd(pmd, *new_pmd);
 	return 0;
 }
 
@@ -939,12 +942,14 @@ static int stage2_set_pte(struct kvm *kvm, struct kvm_mmu_memory_cache *cache,
 
 	/* Create 2nd stage page table mapping - Level 3 */
 	old_pte = *pte;
-	kvm_set_pte(pte, *new_pte);
-	if (pte_present(old_pte))
+	if (pte_present(old_pte)) {
+		kvm_set_pte(pte, __pte(0));
 		kvm_tlb_flush_vmid_ipa(kvm, addr);
-	else
+	} else {
 		get_page(virt_to_page(pte));
+	}
 
+	kvm_set_pte(pte, *new_pte);
 	return 0;
 }
 
@@ -992,9 +997,9 @@ out:
 	return ret;
 }
 
-static bool transparent_hugepage_adjust(kvm_pfn_t *pfnp, phys_addr_t *ipap)
+static bool transparent_hugepage_adjust(pfn_t *pfnp, phys_addr_t *ipap)
 {
-	kvm_pfn_t pfn = *pfnp;
+	pfn_t pfn = *pfnp;
 	gfn_t gfn = *ipap >> PAGE_SHIFT;
 
 	if (PageTransCompound(pfn_to_page(pfn))) {
@@ -1201,7 +1206,7 @@ void kvm_arch_mmu_enable_log_dirty_pt_masked(struct kvm *kvm,
 	kvm_mmu_write_protect_pt_masked(kvm, slot, gfn_offset, mask);
 }
 
-static void coherent_cache_guest_page(struct kvm_vcpu *vcpu, kvm_pfn_t pfn,
+static void coherent_cache_guest_page(struct kvm_vcpu *vcpu, pfn_t pfn,
 				      unsigned long size, bool uncached)
 {
 	__coherent_cache_guest_page(vcpu, pfn, size, uncached);
@@ -1218,7 +1223,7 @@ static int user_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 	struct kvm *kvm = vcpu->kvm;
 	struct kvm_mmu_memory_cache *memcache = &vcpu->arch.mmu_page_cache;
 	struct vm_area_struct *vma;
-	kvm_pfn_t pfn;
+	pfn_t pfn;
 	pgprot_t mem_type = PAGE_S2;
 	bool fault_ipa_uncached;
 	bool logging_active = memslot_is_logging(memslot);
@@ -1346,7 +1351,7 @@ static void handle_access_fault(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa)
 {
 	pmd_t *pmd;
 	pte_t *pte;
-	kvm_pfn_t pfn;
+	pfn_t pfn;
 	bool pfn_valid = false;
 
 	trace_kvm_access_fault(fault_ipa);

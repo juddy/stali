@@ -23,7 +23,7 @@
 #include <linux/delay.h>
 #include <linux/device.h>
 #include <linux/err.h>
-#include <linux/gpio/driver.h>
+#include <linux/gpio.h>
 #include <linux/interrupt.h>
 #include <linux/io.h>
 #include <linux/irq.h>
@@ -47,6 +47,7 @@
 #define MODULE_NAME "pinctrl-bcm2835"
 #define BCM2835_NUM_GPIOS 54
 #define BCM2835_NUM_BANKS 2
+#define BCM2835_NUM_IRQS  3
 
 #define BCM2835_PIN_BITMAP_SZ \
 	DIV_ROUND_UP(BCM2835_NUM_GPIOS, sizeof(unsigned long) * 8)
@@ -88,13 +89,13 @@ enum bcm2835_pinconf_pull {
 
 struct bcm2835_gpio_irqdata {
 	struct bcm2835_pinctrl *pc;
-	int bank;
+	int irqgroup;
 };
 
 struct bcm2835_pinctrl {
 	struct device *dev;
 	void __iomem *base;
-	int irq[BCM2835_NUM_BANKS];
+	int irq[BCM2835_NUM_IRQS];
 
 	/* note: locking assumes each bank will have its own unsigned long */
 	unsigned long enabled_irq_map[BCM2835_NUM_BANKS];
@@ -105,7 +106,7 @@ struct bcm2835_pinctrl {
 	struct gpio_chip gpio_chip;
 	struct pinctrl_gpio_range gpio_range;
 
-	struct bcm2835_gpio_irqdata irq_data[BCM2835_NUM_BANKS];
+	struct bcm2835_gpio_irqdata irq_data[BCM2835_NUM_IRQS];
 	spinlock_t irq_lock[BCM2835_NUM_BANKS];
 };
 
@@ -337,14 +338,14 @@ static int bcm2835_gpio_direction_input(struct gpio_chip *chip, unsigned offset)
 
 static int bcm2835_gpio_get(struct gpio_chip *chip, unsigned offset)
 {
-	struct bcm2835_pinctrl *pc = gpiochip_get_data(chip);
+	struct bcm2835_pinctrl *pc = dev_get_drvdata(chip->dev);
 
 	return bcm2835_gpio_get_bit(pc, GPLEV0, offset);
 }
 
 static void bcm2835_gpio_set(struct gpio_chip *chip, unsigned offset, int value)
 {
-	struct bcm2835_pinctrl *pc = gpiochip_get_data(chip);
+	struct bcm2835_pinctrl *pc = dev_get_drvdata(chip->dev);
 
 	bcm2835_gpio_set_bit(pc, value ? GPSET0 : GPCLR0, offset);
 }
@@ -358,7 +359,7 @@ static int bcm2835_gpio_direction_output(struct gpio_chip *chip,
 
 static int bcm2835_gpio_to_irq(struct gpio_chip *chip, unsigned offset)
 {
-	struct bcm2835_pinctrl *pc = gpiochip_get_data(chip);
+	struct bcm2835_pinctrl *pc = dev_get_drvdata(chip->dev);
 
 	return irq_linear_revmap(pc->irq_domain, offset);
 }
@@ -373,22 +374,21 @@ static struct gpio_chip bcm2835_gpio_chip = {
 	.get = bcm2835_gpio_get,
 	.set = bcm2835_gpio_set,
 	.to_irq = bcm2835_gpio_to_irq,
-	.base = -1,
+	.base = 0,
 	.ngpio = BCM2835_NUM_GPIOS,
 	.can_sleep = false,
 };
 
-static irqreturn_t bcm2835_gpio_irq_handler(int irq, void *dev_id)
+static int bcm2835_gpio_irq_handle_bank(struct bcm2835_pinctrl *pc,
+					unsigned int bank, u32 mask)
 {
-	struct bcm2835_gpio_irqdata *irqdata = dev_id;
-	struct bcm2835_pinctrl *pc = irqdata->pc;
-	int bank = irqdata->bank;
 	unsigned long events;
 	unsigned offset;
 	unsigned gpio;
 	unsigned int type;
 
 	events = bcm2835_gpio_rd(pc, GPEDS0 + bank * 4);
+	events &= mask;
 	events &= pc->enabled_irq_map[bank];
 	for_each_set_bit(offset, &events, 32) {
 		gpio = (32 * bank) + offset;
@@ -396,7 +396,30 @@ static irqreturn_t bcm2835_gpio_irq_handler(int irq, void *dev_id)
 
 		generic_handle_irq(irq_linear_revmap(pc->irq_domain, gpio));
 	}
-	return events ? IRQ_HANDLED : IRQ_NONE;
+
+	return (events != 0);
+}
+
+static irqreturn_t bcm2835_gpio_irq_handler(int irq, void *dev_id)
+{
+	struct bcm2835_gpio_irqdata *irqdata = dev_id;
+	struct bcm2835_pinctrl *pc = irqdata->pc;
+	int handled = 0;
+
+	switch (irqdata->irqgroup) {
+	case 0: /* IRQ0 covers GPIOs 0-27 */
+		handled = bcm2835_gpio_irq_handle_bank(pc, 0, 0x0fffffff);
+		break;
+	case 1: /* IRQ1 covers GPIOs 28-45 */
+		handled = bcm2835_gpio_irq_handle_bank(pc, 0, 0xf0000000) |
+			  bcm2835_gpio_irq_handle_bank(pc, 1, 0x00003fff);
+		break;
+	case 2: /* IRQ2 covers GPIOs 46-53 */
+		handled = bcm2835_gpio_irq_handle_bank(pc, 1, 0x003fc000);
+		break;
+	}
+
+	return handled ? IRQ_HANDLED : IRQ_NONE;
 }
 
 static inline void __bcm2835_gpio_irq_config(struct bcm2835_pinctrl *pc,
@@ -779,7 +802,7 @@ static int bcm2835_pctl_dt_node_to_map(struct pinctrl_dev *pctldev,
 		}
 		if (num_pulls) {
 			err = of_property_read_u32_index(np, "brcm,pull",
-					(num_funcs > 1) ? i : 0, &pull);
+					(num_pulls > 1) ? i : 0, &pull);
 			if (err)
 				goto out;
 			err = bcm2835_pctl_dt_node_to_map_pull(pc, np, pin,
@@ -795,7 +818,7 @@ static int bcm2835_pctl_dt_node_to_map(struct pinctrl_dev *pctldev,
 	return 0;
 
 out:
-	bcm2835_pctl_dt_free_map(pctldev, maps, num_pins * maps_per_pin);
+	kfree(maps);
 	return err;
 }
 
@@ -807,6 +830,16 @@ static const struct pinctrl_ops bcm2835_pctl_ops = {
 	.dt_node_to_map = bcm2835_pctl_dt_node_to_map,
 	.dt_free_map = bcm2835_pctl_dt_free_map,
 };
+
+static int bcm2835_pmx_free(struct pinctrl_dev *pctldev,
+		unsigned offset)
+{
+	struct bcm2835_pinctrl *pc = pinctrl_dev_get_drvdata(pctldev);
+
+	/* disable by setting to GPIO_IN */
+	bcm2835_pinctrl_fsel_set(pc, offset, BCM2835_FSEL_GPIO_IN);
+	return 0;
+}
 
 static int bcm2835_pmx_get_functions_count(struct pinctrl_dev *pctldev)
 {
@@ -867,6 +900,7 @@ static int bcm2835_pmx_gpio_set_direction(struct pinctrl_dev *pctldev,
 }
 
 static const struct pinmux_ops bcm2835_pmx_ops = {
+	.free = bcm2835_pmx_free,
 	.get_functions_count = bcm2835_pmx_get_functions_count,
 	.get_function_name = bcm2835_pmx_get_function_name,
 	.get_function_groups = bcm2835_pmx_get_function_groups,
@@ -964,7 +998,7 @@ static int bcm2835_pinctrl_probe(struct platform_device *pdev)
 		return PTR_ERR(pc->base);
 
 	pc->gpio_chip = bcm2835_gpio_chip;
-	pc->gpio_chip.parent = dev;
+	pc->gpio_chip.dev = dev;
 	pc->gpio_chip.of_node = np;
 
 	pc->irq_domain = irq_domain_add_linear(np, BCM2835_NUM_GPIOS,
@@ -985,8 +1019,6 @@ static int bcm2835_pinctrl_probe(struct platform_device *pdev)
 	for (i = 0; i < BCM2835_NUM_BANKS; i++) {
 		unsigned long events;
 		unsigned offset;
-		int len;
-		char *name;
 
 		/* clear event detection flags */
 		bcm2835_gpio_wr(pc, GPREN0 + i * 4, 0);
@@ -1001,10 +1033,17 @@ static int bcm2835_pinctrl_probe(struct platform_device *pdev)
 		for_each_set_bit(offset, &events, 32)
 			bcm2835_gpio_wr(pc, GPEDS0 + i * 4, BIT(offset));
 
-		pc->irq[i] = irq_of_parse_and_map(np, i);
-		pc->irq_data[i].pc = pc;
-		pc->irq_data[i].bank = i;
 		spin_lock_init(&pc->irq_lock[i]);
+	}
+
+	for (i = 0; i < BCM2835_NUM_IRQS; i++) {
+		int len;
+		char *name;
+		pc->irq[i] = irq_of_parse_and_map(np, i);
+		if (pc->irq[i] == 0)
+			break;
+		pc->irq_data[i].pc = pc;
+		pc->irq_data[i].irqgroup = i;
 
 		len = strlen(dev_name(pc->dev)) + 16;
 		name = devm_kzalloc(pc->dev, len, GFP_KERNEL);
@@ -1021,7 +1060,7 @@ static int bcm2835_pinctrl_probe(struct platform_device *pdev)
 		}
 	}
 
-	err = gpiochip_add_data(&pc->gpio_chip, pc);
+	err = gpiochip_add(&pc->gpio_chip);
 	if (err) {
 		dev_err(dev, "could not add GPIO chip\n");
 		return err;
@@ -1062,6 +1101,7 @@ static struct platform_driver bcm2835_pinctrl_driver = {
 	.remove = bcm2835_pinctrl_remove,
 	.driver = {
 		.name = MODULE_NAME,
+		.owner = THIS_MODULE,
 		.of_match_table = bcm2835_pinctrl_match,
 	},
 };

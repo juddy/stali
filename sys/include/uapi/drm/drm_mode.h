@@ -27,7 +27,7 @@
 #ifndef _DRM_MODE_H
 #define _DRM_MODE_H
 
-#include "drm.h"
+#include <linux/types.h>
 
 #define DRM_DISPLAY_INFO_LEN	32
 #define DRM_CONNECTOR_NAME_LEN	32
@@ -202,6 +202,7 @@ struct drm_mode_get_plane_res {
 #define DRM_MODE_ENCODER_VIRTUAL 5
 #define DRM_MODE_ENCODER_DSI	6
 #define DRM_MODE_ENCODER_DPMST	7
+#define DRM_MODE_ENCODER_DPI	8
 
 struct drm_mode_get_encoder {
 	__u32 encoder_id;
@@ -241,6 +242,7 @@ struct drm_mode_get_encoder {
 #define DRM_MODE_CONNECTOR_eDP		14
 #define DRM_MODE_CONNECTOR_VIRTUAL      15
 #define DRM_MODE_CONNECTOR_DSI		16
+#define DRM_MODE_CONNECTOR_DPI		17
 
 struct drm_mode_get_connector {
 
@@ -526,14 +528,14 @@ struct drm_mode_crtc_page_flip {
 
 /* create a dumb scanout buffer */
 struct drm_mode_create_dumb {
-	__u32 height;
-	__u32 width;
-	__u32 bpp;
-	__u32 flags;
+	uint32_t height;
+	uint32_t width;
+	uint32_t bpp;
+	uint32_t flags;
 	/* handle, pitch, size will be returned */
-	__u32 handle;
-	__u32 pitch;
-	__u64 size;
+	uint32_t handle;
+	uint32_t pitch;
+	uint64_t size;
 };
 
 /* set up for mmap of a dumb scanout buffer */
@@ -550,7 +552,7 @@ struct drm_mode_map_dumb {
 };
 
 struct drm_mode_destroy_dumb {
-	__u32 handle;
+	uint32_t handle;
 };
 
 /* page-flip flags are valid, plus: */

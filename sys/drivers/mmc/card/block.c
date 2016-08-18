@@ -47,10 +47,13 @@
 #include "queue.h"
 
 MODULE_ALIAS("mmc:block");
+
+#ifdef KERNEL
 #ifdef MODULE_PARAM_PREFIX
 #undef MODULE_PARAM_PREFIX
 #endif
 #define MODULE_PARAM_PREFIX "mmcblk."
+#endif
 
 #define INAND_CMD38_ARG_EXT_CSD  113
 #define INAND_CMD38_ARG_ERASE    0x00
@@ -134,6 +137,13 @@ enum {
 module_param(perdev_minors, int, 0444);
 MODULE_PARM_DESC(perdev_minors, "Minors numbers to allocate per device");
 
+/*
+ * Allow quirks to be overridden for the current card
+ */
+static char *card_quirks;
+module_param(card_quirks, charp, 0644);
+MODULE_PARM_DESC(card_quirks, "Force the use of the indicated quirks (a bitfield)");
+
 static inline int mmc_blk_part_switch(struct mmc_card *card,
 				      struct mmc_blk_data *md);
 static int get_card_status(struct mmc_card *card, u32 *status, int retries);
@@ -168,7 +178,11 @@ static struct mmc_blk_data *mmc_blk_get(struct gendisk *disk)
 
 static inline int mmc_get_devidx(struct gendisk *disk)
 {
-	int devidx = disk->first_minor / perdev_minors;
+	int devmaj = MAJOR(disk_devt(disk));
+	int devidx = MINOR(disk_devt(disk)) / perdev_minors;
+
+	if (!devmaj)
+		devidx = disk->first_minor / perdev_minors;
 	return devidx;
 }
 
@@ -337,7 +351,7 @@ static struct mmc_blk_ioc_data *mmc_blk_ioctl_copy_from_user(
 	struct mmc_blk_ioc_data *idata;
 	int err;
 
-	idata = kmalloc(sizeof(*idata), GFP_KERNEL);
+	idata = kzalloc(sizeof(*idata), GFP_KERNEL);
 	if (!idata) {
 		err = -ENOMEM;
 		goto out;
@@ -357,7 +371,7 @@ static struct mmc_blk_ioc_data *mmc_blk_ioctl_copy_from_user(
 	if (!idata->buf_bytes)
 		return idata;
 
-	idata->buf = kmalloc(idata->buf_bytes, GFP_KERNEL);
+	idata->buf = kzalloc(idata->buf_bytes, GFP_KERNEL);
 	if (!idata->buf) {
 		err = -ENOMEM;
 		goto idata_err;
@@ -589,6 +603,14 @@ static int mmc_blk_ioctl_cmd(struct block_device *bdev,
 	struct mmc_card *card;
 	int err = 0, ioc_err = 0;
 
+	/*
+	 * The caller must have CAP_SYS_RAWIO, and must be calling this on the
+	 * whole block device, not on a partition.  This prevents overspray
+	 * between sibling partitions.
+	 */
+	if ((!capable(CAP_SYS_RAWIO)) || (bdev != bdev->bd_contains))
+		return -EPERM;
+
 	idata = mmc_blk_ioctl_copy_from_user(ic_ptr);
 	if (IS_ERR(idata))
 		return PTR_ERR(idata);
@@ -631,6 +653,14 @@ static int mmc_blk_ioctl_multi_cmd(struct block_device *bdev,
 	int i, err = 0, ioc_err = 0;
 	__u64 num_of_cmds;
 
+	/*
+	 * The caller must have CAP_SYS_RAWIO, and must be calling this on the
+	 * whole block device, not on a partition.  This prevents overspray
+	 * between sibling partitions.
+	 */
+	if ((!capable(CAP_SYS_RAWIO)) || (bdev != bdev->bd_contains))
+		return -EPERM;
+
 	if (copy_from_user(&num_of_cmds, &user->num_of_cmds,
 			   sizeof(num_of_cmds)))
 		return -EFAULT;
@@ -652,10 +682,8 @@ static int mmc_blk_ioctl_multi_cmd(struct block_device *bdev,
 	}
 
 	md = mmc_blk_get(bdev->bd_disk);
-	if (!md) {
-		err = -EINVAL;
+	if (!md)
 		goto cmd_err;
-	}
 
 	card = md->queue.card;
 	if (IS_ERR(card)) {
@@ -688,14 +716,6 @@ cmd_err:
 static int mmc_blk_ioctl(struct block_device *bdev, fmode_t mode,
 	unsigned int cmd, unsigned long arg)
 {
-	/*
-	 * The caller must have CAP_SYS_RAWIO, and must be calling this on the
-	 * whole block device, not on a partition.  This prevents overspray
-	 * between sibling partitions.
-	 */
-	if ((!capable(CAP_SYS_RAWIO)) || (bdev != bdev->bd_contains))
-		return -EPERM;
-
 	switch (cmd) {
 	case MMC_IOC_CMD:
 		return mmc_blk_ioctl_cmd(bdev,
@@ -1754,8 +1774,8 @@ static void mmc_blk_packed_hdr_wrq_prep(struct mmc_queue_req *mqrq,
 
 	packed_cmd_hdr = packed->cmd_hdr;
 	memset(packed_cmd_hdr, 0, sizeof(packed->cmd_hdr));
-	packed_cmd_hdr[0] = (packed->nr_entries << 16) |
-		(PACKED_CMD_WR << 8) | PACKED_CMD_VER;
+	packed_cmd_hdr[0] = cpu_to_le32((packed->nr_entries << 16) |
+		(PACKED_CMD_WR << 8) | PACKED_CMD_VER);
 	hdr_blocks = mmc_large_sector(card) ? 8 : 1;
 
 	/*
@@ -1769,14 +1789,14 @@ static void mmc_blk_packed_hdr_wrq_prep(struct mmc_queue_req *mqrq,
 			((brq->data.blocks * brq->data.blksz) >=
 			 card->ext_csd.data_tag_unit_size);
 		/* Argument of CMD23 */
-		packed_cmd_hdr[(i * 2)] =
+		packed_cmd_hdr[(i * 2)] = cpu_to_le32(
 			(do_rel_wr ? MMC_CMD23_ARG_REL_WR : 0) |
 			(do_data_tag ? MMC_CMD23_ARG_TAG_REQ : 0) |
-			blk_rq_sectors(prq);
+			blk_rq_sectors(prq));
 		/* Argument of CMD18 or CMD25 */
-		packed_cmd_hdr[((i * 2)) + 1] =
+		packed_cmd_hdr[((i * 2)) + 1] = cpu_to_le32(
 			mmc_card_blockaddr(card) ?
-			blk_rq_pos(prq) : blk_rq_pos(prq) << 9;
+			blk_rq_pos(prq) : blk_rq_pos(prq) << 9);
 		packed->blocks += blk_rq_sectors(prq);
 		i++;
 	}
@@ -2239,7 +2259,6 @@ static struct mmc_blk_data *mmc_blk_alloc_req(struct mmc_card *card,
 	md->disk->queue = md->queue.queue;
 	md->disk->driverfs_dev = parent;
 	set_disk_ro(md->disk, md->read_only || default_ro);
-	md->disk->flags = GENHD_FL_EXT_DEVT;
 	if (area_type & (MMC_BLK_DATA_AREA_RPMB | MMC_BLK_DATA_AREA_BOOT))
 		md->disk->flags |= GENHD_FL_NO_PART_SCAN;
 
@@ -2502,10 +2521,11 @@ static const struct mmc_fixup blk_fixups[] =
 		  MMC_QUIRK_BLK_NO_CMD23),
 
 	/*
-	 * Some Micron MMC cards needs longer data read timeout than
-	 * indicated in CSD.
+	 * Some MMC cards need longer data read timeout than indicated in CSD.
 	 */
 	MMC_FIXUP(CID_NAME_ANY, CID_MANFID_MICRON, 0x200, add_quirk_mmc,
+		  MMC_QUIRK_LONG_READ_TIME),
+	MMC_FIXUP("008GE0", CID_MANFID_TOSHIBA, CID_OEMID_ANY, add_quirk_mmc,
 		  MMC_QUIRK_LONG_READ_TIME),
 
 	/*
@@ -2539,6 +2559,14 @@ static const struct mmc_fixup blk_fixups[] =
 	MMC_FIXUP("V10016", CID_MANFID_KINGSTON, CID_OEMID_ANY, add_quirk_mmc,
 		  MMC_QUIRK_TRIM_BROKEN),
 
+	/*
+	 *  On some Kingston SD cards, multiple erases of less than 64
+	 *  sectors can cause corruption.
+	 */
+	MMC_FIXUP("SD16G", 0x41, 0x3432, add_quirk, MMC_QUIRK_ERASE_BROKEN),
+	MMC_FIXUP("SD32G", 0x41, 0x3432, add_quirk, MMC_QUIRK_ERASE_BROKEN),
+	MMC_FIXUP("SD64G", 0x41, 0x3432, add_quirk, MMC_QUIRK_ERASE_BROKEN),
+
 	END_FIXUP
 };
 
@@ -2546,6 +2574,7 @@ static int mmc_blk_probe(struct mmc_card *card)
 {
 	struct mmc_blk_data *md, *part_md;
 	char cap_str[10];
+	char quirk_str[24];
 
 	/*
 	 * Check that the card supports the command class(es) we need.
@@ -2553,7 +2582,16 @@ static int mmc_blk_probe(struct mmc_card *card)
 	if (!(card->csd.cmdclass & CCC_BLOCK_READ))
 		return -ENODEV;
 
-	mmc_fixup_device(card, blk_fixups);
+	if (card_quirks) {
+		unsigned long quirks;
+		if (kstrtoul(card_quirks, 0, &quirks) == 0)
+			card->quirks = (unsigned int)quirks;
+		else
+			pr_err("mmc_block: Invalid card_quirks parameter '%s'\n",
+			       card_quirks);
+	}
+	else
+		mmc_fixup_device(card, blk_fixups);
 
 	md = mmc_blk_alloc(card);
 	if (IS_ERR(md))
@@ -2561,9 +2599,14 @@ static int mmc_blk_probe(struct mmc_card *card)
 
 	string_get_size((u64)get_capacity(md->disk), 512, STRING_UNITS_2,
 			cap_str, sizeof(cap_str));
-	pr_info("%s: %s %s %s %s\n",
+	if (card->quirks)
+		snprintf(quirk_str, sizeof(quirk_str),
+			 " (quirks 0x%08x)", card->quirks);
+	else
+		quirk_str[0] = '\0';
+	pr_info("%s: %s %s %s%s%s\n",
 		md->disk->disk_name, mmc_card_id(card), mmc_card_name(card),
-		cap_str, md->read_only ? "(ro)" : "");
+		cap_str, md->read_only ? " (ro)" : "", quirk_str);
 
 	if (mmc_blk_alloc_parts(card, md))
 		goto out;

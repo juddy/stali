@@ -92,15 +92,17 @@ static void __init clk_sp810_of_setup(struct device_node *node)
 	int num = ARRAY_SIZE(parent_names);
 	char name[12];
 	struct clk_init_data init;
+	static int instance;
 	int i;
 	bool deprecated;
 
-	if (!sp810)
+	if (!sp810) {
+		pr_err("Failed to allocate memory for SP810!\n");
 		return;
+	}
 
 	if (of_clk_parent_fill(node, parent_names, num) != num) {
 		pr_warn("Failed to obtain parent clocks for SP810!\n");
-		kfree(sp810);
 		return;
 	}
 
@@ -117,7 +119,7 @@ static void __init clk_sp810_of_setup(struct device_node *node)
 	deprecated = !of_find_property(node, "assigned-clock-parents", NULL);
 
 	for (i = 0; i < ARRAY_SIZE(sp810->timerclken); i++) {
-		snprintf(name, ARRAY_SIZE(name), "timerclken%d", i);
+		snprintf(name, sizeof(name), "sp810_%d_%d", instance, i);
 
 		sp810->timerclken[i].sp810 = sp810;
 		sp810->timerclken[i].channel = i;
@@ -138,5 +140,6 @@ static void __init clk_sp810_of_setup(struct device_node *node)
 	}
 
 	of_clk_add_provider(node, clk_sp810_timerclken_of_get, sp810);
+	instance++;
 }
 CLK_OF_DECLARE(sp810, "arm,sp810", clk_sp810_of_setup);

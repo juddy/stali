@@ -3746,7 +3746,7 @@ static const struct flag flags[] = {
 	{ "NET_TX_SOFTIRQ", 2 },
 	{ "NET_RX_SOFTIRQ", 3 },
 	{ "BLOCK_SOFTIRQ", 4 },
-	{ "IRQ_POLL_SOFTIRQ", 5 },
+	{ "BLOCK_IOPOLL_SOFTIRQ", 5 },
 	{ "TASKLET_SOFTIRQ", 6 },
 	{ "SCHED_SOFTIRQ", 7 },
 	{ "HRTIMER_SOFTIRQ", 8 },
@@ -4735,80 +4735,73 @@ static int is_printable_array(char *p, unsigned int len)
 	return 1;
 }
 
-void pevent_print_field(struct trace_seq *s, void *data,
-			struct format_field *field)
-{
-	unsigned long long val;
-	unsigned int offset, len, i;
-	struct pevent *pevent = field->event->pevent;
-
-	if (field->flags & FIELD_IS_ARRAY) {
-		offset = field->offset;
-		len = field->size;
-		if (field->flags & FIELD_IS_DYNAMIC) {
-			val = pevent_read_number(pevent, data + offset, len);
-			offset = val;
-			len = offset >> 16;
-			offset &= 0xffff;
-		}
-		if (field->flags & FIELD_IS_STRING &&
-		    is_printable_array(data + offset, len)) {
-			trace_seq_printf(s, "%s", (char *)data + offset);
-		} else {
-			trace_seq_puts(s, "ARRAY[");
-			for (i = 0; i < len; i++) {
-				if (i)
-					trace_seq_puts(s, ", ");
-				trace_seq_printf(s, "%02x",
-						 *((unsigned char *)data + offset + i));
-			}
-			trace_seq_putc(s, ']');
-			field->flags &= ~FIELD_IS_STRING;
-		}
-	} else {
-		val = pevent_read_number(pevent, data + field->offset,
-					 field->size);
-		if (field->flags & FIELD_IS_POINTER) {
-			trace_seq_printf(s, "0x%llx", val);
-		} else if (field->flags & FIELD_IS_SIGNED) {
-			switch (field->size) {
-			case 4:
-				/*
-				 * If field is long then print it in hex.
-				 * A long usually stores pointers.
-				 */
-				if (field->flags & FIELD_IS_LONG)
-					trace_seq_printf(s, "0x%x", (int)val);
-				else
-					trace_seq_printf(s, "%d", (int)val);
-				break;
-			case 2:
-				trace_seq_printf(s, "%2d", (short)val);
-				break;
-			case 1:
-				trace_seq_printf(s, "%1d", (char)val);
-				break;
-			default:
-				trace_seq_printf(s, "%lld", val);
-			}
-		} else {
-			if (field->flags & FIELD_IS_LONG)
-				trace_seq_printf(s, "0x%llx", val);
-			else
-				trace_seq_printf(s, "%llu", val);
-		}
-	}
-}
-
-void pevent_print_fields(struct trace_seq *s, void *data,
-			 int size __maybe_unused, struct event_format *event)
+static void print_event_fields(struct trace_seq *s, void *data,
+			       int size __maybe_unused,
+			       struct event_format *event)
 {
 	struct format_field *field;
+	unsigned long long val;
+	unsigned int offset, len, i;
 
 	field = event->format.fields;
 	while (field) {
 		trace_seq_printf(s, " %s=", field->name);
-		pevent_print_field(s, data, field);
+		if (field->flags & FIELD_IS_ARRAY) {
+			offset = field->offset;
+			len = field->size;
+			if (field->flags & FIELD_IS_DYNAMIC) {
+				val = pevent_read_number(event->pevent, data + offset, len);
+				offset = val;
+				len = offset >> 16;
+				offset &= 0xffff;
+			}
+			if (field->flags & FIELD_IS_STRING &&
+			    is_printable_array(data + offset, len)) {
+				trace_seq_printf(s, "%s", (char *)data + offset);
+			} else {
+				trace_seq_puts(s, "ARRAY[");
+				for (i = 0; i < len; i++) {
+					if (i)
+						trace_seq_puts(s, ", ");
+					trace_seq_printf(s, "%02x",
+							 *((unsigned char *)data + offset + i));
+				}
+				trace_seq_putc(s, ']');
+				field->flags &= ~FIELD_IS_STRING;
+			}
+		} else {
+			val = pevent_read_number(event->pevent, data + field->offset,
+						 field->size);
+			if (field->flags & FIELD_IS_POINTER) {
+				trace_seq_printf(s, "0x%llx", val);
+			} else if (field->flags & FIELD_IS_SIGNED) {
+				switch (field->size) {
+				case 4:
+					/*
+					 * If field is long then print it in hex.
+					 * A long usually stores pointers.
+					 */
+					if (field->flags & FIELD_IS_LONG)
+						trace_seq_printf(s, "0x%x", (int)val);
+					else
+						trace_seq_printf(s, "%d", (int)val);
+					break;
+				case 2:
+					trace_seq_printf(s, "%2d", (short)val);
+					break;
+				case 1:
+					trace_seq_printf(s, "%1d", (char)val);
+					break;
+				default:
+					trace_seq_printf(s, "%lld", val);
+				}
+			} else {
+				if (field->flags & FIELD_IS_LONG)
+					trace_seq_printf(s, "0x%llx", val);
+				else
+					trace_seq_printf(s, "%llu", val);
+			}
+		}
 		field = field->next;
 	}
 }
@@ -4834,7 +4827,7 @@ static void pretty_print(struct trace_seq *s, void *data, int size, struct event
 
 	if (event->flags & EVENT_FL_FAILED) {
 		trace_seq_printf(s, "[FAILED TO PARSE]");
-		pevent_print_fields(s, data, size, event);
+		print_event_fields(s, data, size, event);
 		return;
 	}
 
@@ -5308,7 +5301,7 @@ void pevent_event_info(struct trace_seq *s, struct event_format *event,
 	int print_pretty = 1;
 
 	if (event->pevent->print_raw || (event->flags & EVENT_FL_PRINTRAW))
-		pevent_print_fields(s, record->data, record->size, event);
+		print_event_fields(s, record->data, record->size, event);
 	else {
 
 		if (event->handler && !(event->flags & EVENT_FL_NOHANDLE))

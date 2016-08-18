@@ -89,7 +89,8 @@ void __init paging_init(void)
 		asce_bits = _ASCE_TYPE_REGION3 | _ASCE_TABLE_LENGTH;
 		pgd_type = _REGION3_ENTRY_EMPTY;
 	}
-	S390_lowcore.kernel_asce = (__pa(init_mm.pgd) & PAGE_MASK) | asce_bits;
+	init_mm.context.asce = (__pa(init_mm.pgd) & PAGE_MASK) | asce_bits;
+	S390_lowcore.kernel_asce = init_mm.context.asce;
 	clear_table((unsigned long *) init_mm.pgd, pgd_type,
 		    sizeof(unsigned long)*2048);
 	vmem_map_init();
@@ -98,7 +99,7 @@ void __init paging_init(void)
 	__ctl_load(S390_lowcore.kernel_asce, 1, 1);
 	__ctl_load(S390_lowcore.kernel_asce, 7, 7);
 	__ctl_load(S390_lowcore.kernel_asce, 13, 13);
-	__arch_local_irq_stosm(0x04);
+	arch_local_irq_restore(4UL << (BITS_PER_LONG - 8));
 
 	sparse_memory_present_with_active_regions(MAX_NUMNODES);
 	sparse_init();

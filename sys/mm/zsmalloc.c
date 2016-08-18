@@ -213,10 +213,10 @@ struct size_class {
 	int size;
 	unsigned int index;
 
-	struct zs_size_stat stats;
-
 	/* Number of PAGE_SIZE sized pages to combine to form a 'zspage' */
 	int pages_per_zspage;
+	struct zs_size_stat stats;
+
 	/* huge object: pages_per_zspage == 1 && maxobj_per_zspage == 1 */
 	bool huge;
 };
@@ -1732,10 +1732,13 @@ static struct page *isolate_source_page(struct size_class *class)
 static unsigned long zs_can_compact(struct size_class *class)
 {
 	unsigned long obj_wasted;
+	unsigned long obj_allocated = zs_stat_get(class, OBJ_ALLOCATED);
+	unsigned long obj_used = zs_stat_get(class, OBJ_USED);
 
-	obj_wasted = zs_stat_get(class, OBJ_ALLOCATED) -
-		zs_stat_get(class, OBJ_USED);
+	if (obj_allocated <= obj_used)
+		return 0;
 
+	obj_wasted = obj_allocated - obj_used;
 	obj_wasted /= get_maxobj_per_zspage(class->size,
 			class->pages_per_zspage);
 

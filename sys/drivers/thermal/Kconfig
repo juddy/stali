@@ -195,7 +195,7 @@ config IMX_THERMAL
 	  passive trip is crossed.
 
 config SPEAR_THERMAL
-	tristate "SPEAr thermal sensor driver"
+	bool "SPEAr thermal sensor driver"
 	depends on PLAT_SPEAR || COMPILE_TEST
 	depends on OF
 	help
@@ -237,8 +237,8 @@ config DOVE_THERMAL
 	  framework.
 
 config DB8500_THERMAL
-	tristate "DB8500 thermal management"
-	depends on MFD_DB8500_PRCMU
+	bool "DB8500 thermal management"
+	depends on ARCH_U8500
 	default y
 	help
 	  Adds DB8500 thermal management implementation according to the thermal
@@ -284,6 +284,13 @@ config INTEL_POWERCLAMP
 	  Enable this to enable Intel PowerClamp idle injection driver. This
 	  enforce idle time which results in more package C-state residency. The
 	  user interface is exposed via generic thermal framework.
+
+config THERMAL_BCM2835
+	depends on RASPBERRYPI_FIRMWARE
+	tristate "BCM2835 Thermal Driver"
+	help
+	  This will enable temperature monitoring for the Broadcom BCM2835
+	  chip. If built as a module, it will be called 'bcm2835-thermal'.
 
 config X86_PKG_TEMP_THERMAL
 	tristate "X86 package temperature thermal driver"

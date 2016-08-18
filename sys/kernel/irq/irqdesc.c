@@ -159,7 +159,6 @@ static struct irq_desc *alloc_desc(int irq, int node, struct module *owner)
 
 	raw_spin_lock_init(&desc->lock);
 	lockdep_set_class(&desc->lock, &irq_desc_lock_class);
-	init_rcu_head(&desc->rcu);
 
 	desc_set_defaults(irq, desc, node, owner);
 
@@ -170,15 +169,6 @@ err_kstat:
 err_desc:
 	kfree(desc);
 	return NULL;
-}
-
-static void delayed_free_desc(struct rcu_head *rhp)
-{
-	struct irq_desc *desc = container_of(rhp, struct irq_desc, rcu);
-
-	free_masks(desc);
-	free_percpu(desc->kstat_irqs);
-	kfree(desc);
 }
 
 static void free_desc(unsigned int irq)
@@ -197,12 +187,9 @@ static void free_desc(unsigned int irq)
 	delete_irq_desc(irq);
 	mutex_unlock(&sparse_irq_lock);
 
-	/*
-	 * We free the descriptor, masks and stat fields via RCU. That
-	 * allows demultiplex interrupts to do rcu based management of
-	 * the child interrupts.
-	 */
-	call_rcu(&desc->rcu, delayed_free_desc);
+	free_masks(desc);
+	free_percpu(desc->kstat_irqs);
+	kfree(desc);
 }
 
 static int alloc_descs(unsigned int start, unsigned int cnt, int node,

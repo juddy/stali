@@ -131,7 +131,7 @@ tcp_timewait_state_process(struct inet_timewait_sock *tw, struct sk_buff *skb,
 			goto kill;
 
 		if (th->syn && !before(TCP_SKB_CB(skb)->seq, tcptw->tw_rcv_nxt))
-			return TCP_TW_RST;
+			goto kill_with_rst;
 
 		/* Dup ACK? */
 		if (!th->ack ||
@@ -145,8 +145,11 @@ tcp_timewait_state_process(struct inet_timewait_sock *tw, struct sk_buff *skb,
 		 * reset.
 		 */
 		if (!th->fin ||
-		    TCP_SKB_CB(skb)->end_seq != tcptw->tw_rcv_nxt + 1)
+		    TCP_SKB_CB(skb)->end_seq != tcptw->tw_rcv_nxt + 1) {
+kill_with_rst:
+			inet_twsk_deschedule_put(tw);
 			return TCP_TW_RST;
+		}
 
 		/* FIN arrived, enter true time-wait state. */
 		tw->tw_substate	  = TCP_TIME_WAIT;

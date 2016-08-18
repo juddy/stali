@@ -66,9 +66,6 @@ void update_page_count(int level, unsigned long pages)
 
 static void split_page_count(int level)
 {
-	if (direct_pages_count[level] == 0)
-		return;
-
 	direct_pages_count[level]--;
 	direct_pages_count[level - 1] += PTRS_PER_PTE;
 }
@@ -132,16 +129,14 @@ within(unsigned long addr, unsigned long start, unsigned long end)
  */
 void clflush_cache_range(void *vaddr, unsigned int size)
 {
-	const unsigned long clflush_size = boot_cpu_data.x86_clflush_size;
-	void *p = (void *)((unsigned long)vaddr & ~(clflush_size - 1));
+	unsigned long clflush_mask = boot_cpu_data.x86_clflush_size - 1;
 	void *vend = vaddr + size;
-
-	if (p >= vend)
-		return;
+	void *p;
 
 	mb();
 
-	for (; p < vend; p += clflush_size)
+	for (p = (void *)((unsigned long)vaddr & ~clflush_mask);
+	     p < vend; p += boot_cpu_data.x86_clflush_size)
 		clflushopt(p);
 
 	mb();

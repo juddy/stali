@@ -14,7 +14,7 @@
  */
 
 #include <linux/io.h>
-#include <linux/gpio/driver.h>
+#include <linux/gpio.h>
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/of_address.h>
@@ -95,7 +95,7 @@ static void mtk_gpio_set(struct gpio_chip *chip, unsigned offset, int value)
 {
 	unsigned int reg_addr;
 	unsigned int bit;
-	struct mtk_pinctrl *pctl = gpiochip_get_data(chip);
+	struct mtk_pinctrl *pctl = dev_get_drvdata(chip->dev);
 
 	reg_addr = mtk_get_port(pctl, offset) + pctl->devdata->dout_offset;
 	bit = BIT(offset & 0xf);
@@ -347,7 +347,6 @@ static int mtk_pconf_parse_conf(struct pinctrl_dev *pctldev,
 		ret = mtk_pconf_set_pull_select(pctl, pin, true, false, arg);
 		break;
 	case PIN_CONFIG_INPUT_ENABLE:
-		mtk_pmx_gpio_set_direction(pctldev, NULL, pin, true);
 		ret = mtk_pconf_set_ies_smt(pctl, pin, arg, param);
 		break;
 	case PIN_CONFIG_OUTPUT:
@@ -355,7 +354,6 @@ static int mtk_pconf_parse_conf(struct pinctrl_dev *pctldev,
 		ret = mtk_pmx_gpio_set_direction(pctldev, NULL, pin, false);
 		break;
 	case PIN_CONFIG_INPUT_SCHMITT_ENABLE:
-		mtk_pmx_gpio_set_direction(pctldev, NULL, pin, true);
 		ret = mtk_pconf_set_ies_smt(pctl, pin, arg, param);
 		break;
 	case PIN_CONFIG_DRIVE_STRENGTH:
@@ -511,9 +509,6 @@ static int mtk_pctrl_dt_subnode_to_map(struct pinctrl_dev *pctldev,
 
 	err = pinconf_generic_parse_dt_config(node, pctldev, &configs,
 		&num_configs);
-	if (err)
-		return err;
-
 	if (num_configs)
 		has_config = 1;
 
@@ -525,23 +520,21 @@ static int mtk_pctrl_dt_subnode_to_map(struct pinctrl_dev *pctldev,
 	if (has_config && num_pins >= 1)
 		maps_per_pin++;
 
-	if (!num_pins || !maps_per_pin) {
-		err = -EINVAL;
-		goto exit;
-	}
+	if (!num_pins || !maps_per_pin)
+		return -EINVAL;
 
 	reserve = num_pins * maps_per_pin;
 
 	err = pinctrl_utils_reserve_map(pctldev, map,
 			reserved_maps, num_maps, reserve);
 	if (err < 0)
-		goto exit;
+		goto fail;
 
 	for (i = 0; i < num_pins; i++) {
 		err = of_property_read_u32_index(node, "pinmux",
 				i, &pinfunc);
 		if (err)
-			goto exit;
+			goto fail;
 
 		pin = MTK_GET_PIN_NO(pinfunc);
 		func = MTK_GET_PIN_FUNC(pinfunc);
@@ -550,21 +543,20 @@ static int mtk_pctrl_dt_subnode_to_map(struct pinctrl_dev *pctldev,
 				func >= ARRAY_SIZE(mtk_gpio_functions)) {
 			dev_err(pctl->dev, "invalid pins value.\n");
 			err = -EINVAL;
-			goto exit;
+			goto fail;
 		}
 
 		grp = mtk_pctrl_find_group_by_pin(pctl, pin);
 		if (!grp) {
 			dev_err(pctl->dev, "unable to match pin %d to group\n",
 					pin);
-			err = -EINVAL;
-			goto exit;
+			return -EINVAL;
 		}
 
 		err = mtk_pctrl_dt_node_to_map_func(pctl, pin, func, grp, map,
 				reserved_maps, num_maps);
 		if (err < 0)
-			goto exit;
+			goto fail;
 
 		if (has_config) {
 			err = pinctrl_utils_add_map_configs(pctldev, map,
@@ -572,14 +564,13 @@ static int mtk_pctrl_dt_subnode_to_map(struct pinctrl_dev *pctldev,
 					configs, num_configs,
 					PIN_MAP_TYPE_CONFIGS_GROUP);
 			if (err < 0)
-				goto exit;
+				goto fail;
 		}
 	}
 
-	err = 0;
+	return 0;
 
-exit:
-	kfree(configs);
+fail:
 	return err;
 }
 
@@ -600,7 +591,6 @@ static int mtk_pctrl_dt_node_to_map(struct pinctrl_dev *pctldev,
 				&reserved_maps, num_maps);
 		if (ret < 0) {
 			pinctrl_utils_dt_free_map(pctldev, *map, *num_maps);
-			of_node_put(np);
 			return ret;
 		}
 	}
@@ -752,7 +742,7 @@ static int mtk_gpio_get_direction(struct gpio_chip *chip, unsigned offset)
 	unsigned int bit;
 	unsigned int read_val = 0;
 
-	struct mtk_pinctrl *pctl = gpiochip_get_data(chip);
+	struct mtk_pinctrl *pctl = dev_get_drvdata(chip->dev);
 
 	reg_addr =  mtk_get_port(pctl, offset) + pctl->devdata->dir_offset;
 	bit = BIT(offset & 0xf);
@@ -765,7 +755,7 @@ static int mtk_gpio_get(struct gpio_chip *chip, unsigned offset)
 	unsigned int reg_addr;
 	unsigned int bit;
 	unsigned int read_val = 0;
-	struct mtk_pinctrl *pctl = gpiochip_get_data(chip);
+	struct mtk_pinctrl *pctl = dev_get_drvdata(chip->dev);
 
 	reg_addr = mtk_get_port(pctl, offset) +
 		pctl->devdata->din_offset;
@@ -778,7 +768,7 @@ static int mtk_gpio_get(struct gpio_chip *chip, unsigned offset)
 static int mtk_gpio_to_irq(struct gpio_chip *chip, unsigned offset)
 {
 	const struct mtk_desc_pin *pin;
-	struct mtk_pinctrl *pctl = gpiochip_get_data(chip);
+	struct mtk_pinctrl *pctl = dev_get_drvdata(chip->dev);
 	int irq;
 
 	pin = pctl->devdata->pins + offset;
@@ -946,10 +936,11 @@ static void mtk_eint_unmask(struct irq_data *d)
 static int mtk_gpio_set_debounce(struct gpio_chip *chip, unsigned offset,
 	unsigned debounce)
 {
-	struct mtk_pinctrl *pctl = dev_get_drvdata(chip->parent);
+	struct mtk_pinctrl *pctl = dev_get_drvdata(chip->dev);
 	int eint_num, virq, eint_offset;
 	unsigned int set_offset, bit, clr_bit, clr_offset, rst, i, unmask, dbnc;
-	static const unsigned int dbnc_arr[] = {0 , 1, 16, 32, 64, 128, 256};
+	static const unsigned int debounce_time[] = {500, 1000, 16000, 32000, 64000,
+						128000, 256000};
 	const struct mtk_desc_pin *pin;
 	struct irq_data *d;
 
@@ -967,9 +958,9 @@ static int mtk_gpio_set_debounce(struct gpio_chip *chip, unsigned offset,
 	if (!mtk_eint_can_en_debounce(pctl, eint_num))
 		return -ENOSYS;
 
-	dbnc = ARRAY_SIZE(dbnc_arr);
-	for (i = 0; i < ARRAY_SIZE(dbnc_arr); i++) {
-		if (debounce <= dbnc_arr[i]) {
+	dbnc = ARRAY_SIZE(debounce_time);
+	for (i = 0; i < ARRAY_SIZE(debounce_time); i++) {
+		if (debounce <= debounce_time[i]) {
 			dbnc = i;
 			break;
 		}
@@ -1200,9 +1191,10 @@ static void mtk_eint_irq_handler(struct irq_desc *desc)
 	const struct mtk_desc_pin *pin;
 
 	chained_irq_enter(chip, desc);
-	for (eint_num = 0; eint_num < pctl->devdata->ap_num; eint_num += 32) {
+	for (eint_num = 0;
+	     eint_num < pctl->devdata->ap_num;
+	     eint_num += 32, reg += 4) {
 		status = readl(reg);
-		reg += 4;
 		while (status) {
 			offset = __ffs(status);
 			index = eint_num + offset;
@@ -1355,10 +1347,10 @@ int mtk_pctrl_init(struct platform_device *pdev,
 	*pctl->chip = mtk_gpio_chip;
 	pctl->chip->ngpio = pctl->devdata->npins;
 	pctl->chip->label = dev_name(&pdev->dev);
-	pctl->chip->parent = &pdev->dev;
+	pctl->chip->dev = &pdev->dev;
 	pctl->chip->base = -1;
 
-	ret = gpiochip_add_data(pctl->chip, pctl);
+	ret = gpiochip_add(pctl->chip);
 	if (ret) {
 		ret = -EINVAL;
 		goto pctrl_error;

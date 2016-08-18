@@ -492,7 +492,7 @@ static const struct file_operations shm_file_operations_huge = {
 	.fallocate	= shm_fallocate,
 };
 
-bool is_file_shm_hugepages(struct file *file)
+int is_file_shm_hugepages(struct file *file)
 {
 	return file->f_op == &shm_file_operations_huge;
 }

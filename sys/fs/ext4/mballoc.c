@@ -1259,6 +1259,7 @@ static void ext4_mb_unload_buddy(struct ext4_buddy *e4b)
 static int mb_find_order_for_block(struct ext4_buddy *e4b, int block)
 {
 	int order = 1;
+	int bb_incr = 1 << (e4b->bd_blkbits - 1);
 	void *bb;
 
 	BUG_ON(e4b->bd_bitmap == e4b->bd_buddy);
@@ -1271,7 +1272,8 @@ static int mb_find_order_for_block(struct ext4_buddy *e4b, int block)
 			/* this block is part of buddy of order 'order' */
 			return order;
 		}
-		bb += 1 << (e4b->bd_blkbits - order);
+		bb += bb_incr;
+		bb_incr >>= 1;
 		order++;
 	}
 	return 0;
@@ -2285,7 +2287,7 @@ static int ext4_mb_seq_groups_show(struct seq_file *seq, void *v)
 	if (group == 0)
 		seq_puts(seq, "#group: free  frags first ["
 			      " 2^0   2^1   2^2   2^3   2^4   2^5   2^6  "
-			      " 2^7   2^8   2^9   2^10  2^11  2^12  2^13  ]\n");
+			      " 2^7   2^8   2^9   2^10  2^11  2^12  2^13  ]");
 
 	i = (sb->s_blocksize_bits + 2) * sizeof(sg.info.bb_counters[0]) +
 		sizeof(struct ext4_group_info);
@@ -2576,7 +2578,7 @@ int ext4_mb_init(struct super_block *sb)
 {
 	struct ext4_sb_info *sbi = EXT4_SB(sb);
 	unsigned i, j;
-	unsigned offset;
+	unsigned offset, offset_incr;
 	unsigned max;
 	int ret;
 
@@ -2605,11 +2607,13 @@ int ext4_mb_init(struct super_block *sb)
 
 	i = 1;
 	offset = 0;
+	offset_incr = 1 << (sb->s_blocksize_bits - 1);
 	max = sb->s_blocksize << 2;
 	do {
 		sbi->s_mb_offsets[i] = offset;
 		sbi->s_mb_maxs[i] = max;
-		offset += 1 << (sb->s_blocksize_bits - i);
+		offset += offset_incr;
+		offset_incr = offset_incr >> 1;
 		max = max >> 1;
 		i++;
 	} while (i <= sb->s_blocksize_bits + 1);

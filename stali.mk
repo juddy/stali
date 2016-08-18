@@ -7,8 +7,7 @@ include $(ROOT)/config.mk
 SUBDIRS = etc\
 	lib\
 	bin\
-
-#sys
+	sys
 
 world: all
 

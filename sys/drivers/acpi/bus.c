@@ -180,15 +180,14 @@ static void acpi_print_osc_error(acpi_handle handle,
 	int i;
 
 	if (ACPI_FAILURE(acpi_get_name(handle, ACPI_FULL_PATHNAME, &buffer)))
-		printk(KERN_DEBUG "%s: %s\n", context->uuid_str, error);
+		printk(KERN_DEBUG "%s\n", error);
 	else {
-		printk(KERN_DEBUG "%s (%s): %s\n",
-		       (char *)buffer.pointer, context->uuid_str, error);
+		printk(KERN_DEBUG "%s:%s\n", (char *)buffer.pointer, error);
 		kfree(buffer.pointer);
 	}
-	printk(KERN_DEBUG "_OSC request data:");
+	printk(KERN_DEBUG"_OSC request data:");
 	for (i = 0; i < context->cap.length; i += sizeof(u32))
-		printk(" %x", *((u32 *)(context->cap.pointer + i)));
+		printk("%x ", *((u32 *)(context->cap.pointer + i)));
 	printk("\n");
 }
 
@@ -1005,6 +1004,9 @@ static int __init acpi_bus_init(void)
 		goto error1;
 	}
 
+	/* Set capability bits for _OSC under processor scope */
+	acpi_early_processor_osc();
+
 	/*
 	 * _OSC method may exist in module level code,
 	 * so it must be run after ACPI_FULL_INITIALIZATION
@@ -1095,7 +1097,6 @@ static int __init acpi_init(void)
 	acpi_debugfs_init();
 	acpi_sleep_proc_init();
 	acpi_wakeup_device_init();
-	acpi_debugger_init();
 	return 0;
 }
 

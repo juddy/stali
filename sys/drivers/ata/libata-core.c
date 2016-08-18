@@ -50,7 +50,6 @@
 #include <linux/blkdev.h>
 #include <linux/delay.h>
 #include <linux/timer.h>
-#include <linux/time.h>
 #include <linux/interrupt.h>
 #include <linux/completion.h>
 #include <linux/suspend.h>
@@ -3598,8 +3597,7 @@ int sata_link_resume(struct ata_link *link, const unsigned long *params,
 		 * immediately after resuming.  Delay 200ms before
 		 * debouncing.
 		 */
-		if (!(link->flags & ATA_LFLAG_NO_DB_DELAY))
-			ata_msleep(link->ap, 200);
+		ata_msleep(link->ap, 200);
 
 		/* is SControl restored correctly? */
 		if ((rc = sata_scr_read(link, SCR_CONTROL, &scontrol)))
@@ -4125,7 +4123,6 @@ static const struct ata_blacklist_entry ata_device_blacklist [] = {
 	{ "SAMSUNG CD-ROM SN-124", "N001",	ATA_HORKAGE_NODMA },
 	{ "Seagate STT20000A", NULL,		ATA_HORKAGE_NODMA },
 	{ " 2GB ATA Flash Disk", "ADMA428M",	ATA_HORKAGE_NODMA },
-	{ "VRFDFC22048UCHC-TE*", NULL,		ATA_HORKAGE_NODMA },
 	/* Odd clown on sil3726/4726 PMPs */
 	{ "Config  Disk",	NULL,		ATA_HORKAGE_DISABLE },
 
@@ -4140,6 +4137,12 @@ static const struct ata_blacklist_entry ata_device_blacklist [] = {
 	 * http://lkml.kernel.org/g/x49wpy40ysk.fsf@segfault.boston.devel.redhat.com
 	 */
 	{ "ST380013AS",		"3.20",		ATA_HORKAGE_MAX_SEC_1024 },
+
+	/*
+	 * Device times out with higher max sects.
+	 * https://bugzilla.kernel.org/show_bug.cgi?id=121671
+	 */
+	{ "LITEON CX1-JB256-HP", NULL,		ATA_HORKAGE_MAX_SEC_1024 },
 
 	/* Devices we expect to fail diagnostics */
 
@@ -6226,7 +6229,6 @@ int ata_host_activate(struct ata_host *host, int irq,
 		      struct scsi_host_template *sht)
 {
 	int i, rc;
-	char *irq_desc;
 
 	rc = ata_host_start(host);
 	if (rc)
@@ -6238,14 +6240,8 @@ int ata_host_activate(struct ata_host *host, int irq,
 		return ata_host_register(host, sht);
 	}
 
-	irq_desc = devm_kasprintf(host->dev, GFP_KERNEL, "%s[%s]",
-				  dev_driver_string(host->dev),
-				  dev_name(host->dev));
-	if (!irq_desc)
-		return -ENOMEM;
-
 	rc = devm_request_irq(host->dev, irq, irq_handler, irq_flags,
-			      irq_desc, host);
+			      dev_name(host->dev), host);
 	if (rc)
 		return rc;
 
@@ -6707,12 +6703,7 @@ void ata_msleep(struct ata_port *ap, unsigned int msecs)
 	if (owns_eh)
 		ata_eh_release(ap);
 
-	if (msecs < 20) {
-		unsigned long usecs = msecs * USEC_PER_MSEC;
-		usleep_range(usecs, usecs + 50);
-	} else {
-		msleep(msecs);
-	}
+	msleep(msecs);
 
 	if (owns_eh)
 		ata_eh_acquire(ap);

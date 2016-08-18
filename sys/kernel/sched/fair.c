@@ -687,8 +687,6 @@ void init_entity_runnable_average(struct sched_entity *se)
 	/* when this task enqueue'ed, it will contribute to its cfs_rq's load_avg */
 }
 
-static inline unsigned long cfs_rq_runnable_load_avg(struct cfs_rq *cfs_rq);
-static inline unsigned long cfs_rq_load_avg(struct cfs_rq *cfs_rq);
 #else
 void init_entity_runnable_average(struct sched_entity *se)
 {
@@ -738,55 +736,11 @@ static void update_curr_fair(struct rq *rq)
 	update_curr(cfs_rq_of(&rq->curr->se));
 }
 
-#ifdef CONFIG_SCHEDSTATS
 static inline void
 update_stats_wait_start(struct cfs_rq *cfs_rq, struct sched_entity *se)
 {
-	u64 wait_start = rq_clock(rq_of(cfs_rq));
-
-	if (entity_is_task(se) && task_on_rq_migrating(task_of(se)) &&
-	    likely(wait_start > se->statistics.wait_start))
-		wait_start -= se->statistics.wait_start;
-
-	se->statistics.wait_start = wait_start;
+	schedstat_set(se->statistics.wait_start, rq_clock(rq_of(cfs_rq)));
 }
-
-static void
-update_stats_wait_end(struct cfs_rq *cfs_rq, struct sched_entity *se)
-{
-	struct task_struct *p;
-	u64 delta = rq_clock(rq_of(cfs_rq)) - se->statistics.wait_start;
-
-	if (entity_is_task(se)) {
-		p = task_of(se);
-		if (task_on_rq_migrating(p)) {
-			/*
-			 * Preserve migrating task's wait time so wait_start
-			 * time stamp can be adjusted to accumulate wait time
-			 * prior to migration.
-			 */
-			se->statistics.wait_start = delta;
-			return;
-		}
-		trace_sched_stat_wait(p, delta);
-	}
-
-	se->statistics.wait_max = max(se->statistics.wait_max, delta);
-	se->statistics.wait_count++;
-	se->statistics.wait_sum += delta;
-	se->statistics.wait_start = 0;
-}
-#else
-static inline void
-update_stats_wait_start(struct cfs_rq *cfs_rq, struct sched_entity *se)
-{
-}
-
-static inline void
-update_stats_wait_end(struct cfs_rq *cfs_rq, struct sched_entity *se)
-{
-}
-#endif
 
 /*
  * Task is being enqueued - update stats:
@@ -799,6 +753,23 @@ static void update_stats_enqueue(struct cfs_rq *cfs_rq, struct sched_entity *se)
 	 */
 	if (se != cfs_rq->curr)
 		update_stats_wait_start(cfs_rq, se);
+}
+
+static void
+update_stats_wait_end(struct cfs_rq *cfs_rq, struct sched_entity *se)
+{
+	schedstat_set(se->statistics.wait_max, max(se->statistics.wait_max,
+			rq_clock(rq_of(cfs_rq)) - se->statistics.wait_start));
+	schedstat_set(se->statistics.wait_count, se->statistics.wait_count + 1);
+	schedstat_set(se->statistics.wait_sum, se->statistics.wait_sum +
+			rq_clock(rq_of(cfs_rq)) - se->statistics.wait_start);
+#ifdef CONFIG_SCHEDSTATS
+	if (entity_is_task(se)) {
+		trace_sched_stat_wait(task_of(se),
+			rq_clock(rq_of(cfs_rq)) - se->statistics.wait_start);
+	}
+#endif
+	schedstat_set(se->statistics.wait_start, 0);
 }
 
 static inline void
@@ -1220,6 +1191,8 @@ static void task_numa_assign(struct task_numa_env *env,
 {
 	if (env->best_task)
 		put_task_struct(env->best_task);
+	if (p)
+		get_task_struct(p);
 
 	env->best_task = p;
 	env->best_imp = imp;
@@ -1287,30 +1260,20 @@ static void task_numa_compare(struct task_numa_env *env,
 	long imp = env->p->numa_group ? groupimp : taskimp;
 	long moveimp = imp;
 	int dist = env->dist;
-	bool assigned = false;
 
 	rcu_read_lock();
 
 	raw_spin_lock_irq(&dst_rq->lock);
 	cur = dst_rq->curr;
 	/*
-	 * No need to move the exiting task or idle task.
+	 * No need to move the exiting task, and this ensures that ->curr
+	 * wasn't reaped and thus get_task_struct() in task_numa_assign()
+	 * is safe under RCU read lock.
+	 * Note that rcu_read_lock() itself can't protect from the final
+	 * put_task_struct() after the last schedule().
 	 */
 	if ((cur->flags & PF_EXITING) || is_idle_task(cur))
 		cur = NULL;
-	else {
-		/*
-		 * The task_struct must be protected here to protect the
-		 * p->numa_faults access in the task_weight since the
-		 * numa_faults could already be freed in the following path:
-		 * finish_task_switch()
-		 *     --> put_task_struct()
-		 *         --> __put_task_struct()
-		 *             --> task_numa_free()
-		 */
-		get_task_struct(cur);
-	}
-
 	raw_spin_unlock_irq(&dst_rq->lock);
 
 	/*
@@ -1394,7 +1357,6 @@ balance:
 		 */
 		if (!load_too_imbalanced(src_load, dst_load, env)) {
 			imp = moveimp - 1;
-			put_task_struct(cur);
 			cur = NULL;
 			goto assign;
 		}
@@ -1420,16 +1382,9 @@ balance:
 		env->dst_cpu = select_idle_sibling(env->p, env->dst_cpu);
 
 assign:
-	assigned = true;
 	task_numa_assign(env, cur, imp);
 unlock:
 	rcu_read_unlock();
-	/*
-	 * The dst_rq->curr isn't assigned. The protection for task_struct is
-	 * finished.
-	 */
-	if (cur && !assigned)
-		put_task_struct(cur);
 }
 
 static void task_numa_find_cpu(struct task_numa_env *env,
@@ -2198,7 +2153,6 @@ void task_numa_work(struct callback_head *work)
 	unsigned long migrate, next_scan, now = jiffies;
 	struct task_struct *p = current;
 	struct mm_struct *mm = p->mm;
-	u64 runtime = p->se.sum_exec_runtime;
 	struct vm_area_struct *vma;
 	unsigned long start, end;
 	unsigned long nr_pte_updates = 0;
@@ -2321,17 +2275,6 @@ out:
 	else
 		reset_ptenuma_scan(p);
 	up_read(&mm->mmap_sem);
-
-	/*
-	 * Make sure tasks use at least 32x as much time to run other code
-	 * than they used here, to limit NUMA PTE scanning overhead to 3% max.
-	 * Usually update_task_scan_period slows down scanning enough; on an
-	 * overloaded system we need to limit overhead on a per task basis.
-	 */
-	if (unlikely(p->se.sum_exec_runtime != runtime)) {
-		u64 diff = p->se.sum_exec_runtime - runtime;
-		p->node_stamp += 32 * diff;
-	}
 }
 
 /*
@@ -2725,69 +2668,34 @@ static inline void update_tg_load_avg(struct cfs_rq *cfs_rq, int force)
 {
 	long delta = cfs_rq->avg.load_avg - cfs_rq->tg_load_avg_contrib;
 
-	/*
-	 * No need to update load_avg for root_task_group as it is not used.
-	 */
-	if (cfs_rq->tg == &root_task_group)
-		return;
-
 	if (force || abs(delta) > cfs_rq->tg_load_avg_contrib / 64) {
 		atomic_long_add(delta, &cfs_rq->tg->load_avg);
 		cfs_rq->tg_load_avg_contrib = cfs_rq->avg.load_avg;
 	}
 }
 
-/*
- * Called within set_task_rq() right before setting a task's cpu. The
- * caller only guarantees p->pi_lock is held; no other assumptions,
- * including the state of rq->lock, should be made.
- */
-void set_task_rq_fair(struct sched_entity *se,
-		      struct cfs_rq *prev, struct cfs_rq *next)
-{
-	if (!sched_feat(ATTACH_AGE_LOAD))
-		return;
-
-	/*
-	 * We are supposed to update the task to "current" time, then its up to
-	 * date and ready to go to new CPU/cfs_rq. But we have difficulty in
-	 * getting what current time is, so simply throw away the out-of-date
-	 * time. This will result in the wakee task is less decayed, but giving
-	 * the wakee more load sounds not bad.
-	 */
-	if (se->avg.last_update_time && prev) {
-		u64 p_last_update_time;
-		u64 n_last_update_time;
-
-#ifndef CONFIG_64BIT
-		u64 p_last_update_time_copy;
-		u64 n_last_update_time_copy;
-
-		do {
-			p_last_update_time_copy = prev->load_last_update_time_copy;
-			n_last_update_time_copy = next->load_last_update_time_copy;
-
-			smp_rmb();
-
-			p_last_update_time = prev->avg.last_update_time;
-			n_last_update_time = next->avg.last_update_time;
-
-		} while (p_last_update_time != p_last_update_time_copy ||
-			 n_last_update_time != n_last_update_time_copy);
-#else
-		p_last_update_time = prev->avg.last_update_time;
-		n_last_update_time = next->avg.last_update_time;
-#endif
-		__update_load_avg(p_last_update_time, cpu_of(rq_of(prev)),
-				  &se->avg, 0, 0, NULL);
-		se->avg.last_update_time = n_last_update_time;
-	}
-}
 #else /* CONFIG_FAIR_GROUP_SCHED */
 static inline void update_tg_load_avg(struct cfs_rq *cfs_rq, int force) {}
 #endif /* CONFIG_FAIR_GROUP_SCHED */
 
 static inline u64 cfs_rq_clock_task(struct cfs_rq *cfs_rq);
+
+/*
+ * Unsigned subtract and clamp on underflow.
+ *
+ * Explicitly do a load-store to ensure the intermediate value never hits
+ * memory. This allows lockless observations without ever seeing the negative
+ * values.
+ */
+#define sub_positive(_ptr, _val) do {				\
+	typeof(_ptr) ptr = (_ptr);				\
+	typeof(*ptr) val = (_val);				\
+	typeof(*ptr) res, var = READ_ONCE(*ptr);		\
+	res = var - val;					\
+	if (res > var)						\
+		res = 0;					\
+	WRITE_ONCE(*ptr, res);					\
+} while (0)
 
 /* Group cfs_rq's load_avg is used for task_h_load and update_cfs_share */
 static inline int update_cfs_rq_load_avg(u64 now, struct cfs_rq *cfs_rq)
@@ -2797,15 +2705,15 @@ static inline int update_cfs_rq_load_avg(u64 now, struct cfs_rq *cfs_rq)
 
 	if (atomic_long_read(&cfs_rq->removed_load_avg)) {
 		s64 r = atomic_long_xchg(&cfs_rq->removed_load_avg, 0);
-		sa->load_avg = max_t(long, sa->load_avg - r, 0);
-		sa->load_sum = max_t(s64, sa->load_sum - r * LOAD_AVG_MAX, 0);
+		sub_positive(&sa->load_avg, r);
+		sub_positive(&sa->load_sum, r * LOAD_AVG_MAX);
 		removed = 1;
 	}
 
 	if (atomic_long_read(&cfs_rq->removed_util_avg)) {
 		long r = atomic_long_xchg(&cfs_rq->removed_util_avg, 0);
-		sa->util_avg = max_t(long, sa->util_avg - r, 0);
-		sa->util_sum = max_t(s32, sa->util_sum - r * LOAD_AVG_MAX, 0);
+		sub_positive(&sa->util_avg, r);
+		sub_positive(&sa->util_sum, r * LOAD_AVG_MAX);
 	}
 
 	decayed = __update_load_avg(now, cpu_of(rq_of(cfs_rq)), sa,
@@ -2871,10 +2779,10 @@ static void detach_entity_load_avg(struct cfs_rq *cfs_rq, struct sched_entity *s
 			  &se->avg, se->on_rq * scale_load_down(se->load.weight),
 			  cfs_rq->curr == se, NULL);
 
-	cfs_rq->avg.load_avg = max_t(long, cfs_rq->avg.load_avg - se->avg.load_avg, 0);
-	cfs_rq->avg.load_sum = max_t(s64,  cfs_rq->avg.load_sum - se->avg.load_sum, 0);
-	cfs_rq->avg.util_avg = max_t(long, cfs_rq->avg.util_avg - se->avg.util_avg, 0);
-	cfs_rq->avg.util_sum = max_t(s32,  cfs_rq->avg.util_sum - se->avg.util_sum, 0);
+	sub_positive(&cfs_rq->avg.load_avg, se->avg.load_avg);
+	sub_positive(&cfs_rq->avg.load_sum, se->avg.load_sum);
+	sub_positive(&cfs_rq->avg.util_avg, se->avg.util_avg);
+	sub_positive(&cfs_rq->avg.util_sum, se->avg.util_sum);
 }
 
 /* Add the load generated by se into cfs_rq's load average */
@@ -2916,27 +2824,6 @@ dequeue_entity_load_avg(struct cfs_rq *cfs_rq, struct sched_entity *se)
 		max_t(s64,  cfs_rq->runnable_load_sum - se->avg.load_sum, 0);
 }
 
-#ifndef CONFIG_64BIT
-static inline u64 cfs_rq_last_update_time(struct cfs_rq *cfs_rq)
-{
-	u64 last_update_time_copy;
-	u64 last_update_time;
-
-	do {
-		last_update_time_copy = cfs_rq->load_last_update_time_copy;
-		smp_rmb();
-		last_update_time = cfs_rq->avg.last_update_time;
-	} while (last_update_time != last_update_time_copy);
-
-	return last_update_time;
-}
-#else
-static inline u64 cfs_rq_last_update_time(struct cfs_rq *cfs_rq)
-{
-	return cfs_rq->avg.last_update_time;
-}
-#endif
-
 /*
  * Task first catches up with cfs_rq, and then subtract
  * itself from the cfs_rq (task must be off the queue now).
@@ -2946,18 +2833,39 @@ void remove_entity_load_avg(struct sched_entity *se)
 	struct cfs_rq *cfs_rq = cfs_rq_of(se);
 	u64 last_update_time;
 
-	/*
-	 * Newly created task or never used group entity should not be removed
-	 * from its (source) cfs_rq
-	 */
-	if (se->avg.last_update_time == 0)
-		return;
+#ifndef CONFIG_64BIT
+	u64 last_update_time_copy;
 
-	last_update_time = cfs_rq_last_update_time(cfs_rq);
+	do {
+		last_update_time_copy = cfs_rq->load_last_update_time_copy;
+		smp_rmb();
+		last_update_time = cfs_rq->avg.last_update_time;
+	} while (last_update_time != last_update_time_copy);
+#else
+	last_update_time = cfs_rq->avg.last_update_time;
+#endif
 
 	__update_load_avg(last_update_time, cpu_of(rq_of(cfs_rq)), &se->avg, 0, 0, NULL);
 	atomic_long_add(se->avg.load_avg, &cfs_rq->removed_load_avg);
 	atomic_long_add(se->avg.util_avg, &cfs_rq->removed_util_avg);
+}
+
+/*
+ * Update the rq's load with the elapsed running time before entering
+ * idle. if the last scheduled task is not a CFS task, idle_enter will
+ * be the only way to update the runnable statistic.
+ */
+void idle_enter_fair(struct rq *this_rq)
+{
+}
+
+/*
+ * Update the rq's load with the elapsed idle time before a task is
+ * scheduled. if the newly scheduled task is not a CFS task, idle_exit will
+ * be the only way to update the runnable statistic.
+ */
+void idle_exit_fair(struct rq *this_rq)
+{
 }
 
 static inline unsigned long cfs_rq_runnable_load_avg(struct cfs_rq *cfs_rq)
@@ -4347,37 +4255,42 @@ static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
  */
 
 /*
- * The exact cpuload calculated at every tick would be:
+ * The exact cpuload at various idx values, calculated at every tick would be
+ * load = (2^idx - 1) / 2^idx * load + 1 / 2^idx * cur_load
  *
- *   load' = (1 - 1/2^i) * load + (1/2^i) * cur_load
- *
- * If a cpu misses updates for n ticks (as it was idle) and update gets
- * called on the n+1-th tick when cpu may be busy, then we have:
- *
- *   load_n   = (1 - 1/2^i)^n * load_0
- *   load_n+1 = (1 - 1/2^i)   * load_n + (1/2^i) * cur_load
+ * If a cpu misses updates for n-1 ticks (as it was idle) and update gets called
+ * on nth tick when cpu may be busy, then we have:
+ * load = ((2^idx - 1) / 2^idx)^(n-1) * load
+ * load = (2^idx - 1) / 2^idx) * load + 1 / 2^idx * cur_load
  *
  * decay_load_missed() below does efficient calculation of
- *
- *   load' = (1 - 1/2^i)^n * load
- *
- * Because x^(n+m) := x^n * x^m we can decompose any x^n in power-of-2 factors.
- * This allows us to precompute the above in said factors, thereby allowing the
- * reduction of an arbitrary n in O(log_2 n) steps. (See also
- * fixed_power_int())
+ * load = ((2^idx - 1) / 2^idx)^(n-1) * load
+ * avoiding 0..n-1 loop doing load = ((2^idx - 1) / 2^idx) * load
  *
  * The calculation is approximated on a 128 point scale.
+ * degrade_zero_ticks is the number of ticks after which load at any
+ * particular idx is approximated to be zero.
+ * degrade_factor is a precomputed table, a row for each load idx.
+ * Each column corresponds to degradation factor for a power of two ticks,
+ * based on 128 point scale.
+ * Example:
+ * row 2, col 3 (=12) says that the degradation at load idx 2 after
+ * 8 ticks is 12/128 (which is an approximation of exact factor 3^8/4^8).
+ *
+ * With this power of 2 load factors, we can degrade the load n times
+ * by looking at 1 bits in n and doing as many mult/shift instead of
+ * n mult/shifts needed by the exact degradation.
  */
 #define DEGRADE_SHIFT		7
-
-static const u8 degrade_zero_ticks[CPU_LOAD_IDX_MAX] = {0, 8, 32, 64, 128};
-static const u8 degrade_factor[CPU_LOAD_IDX_MAX][DEGRADE_SHIFT + 1] = {
-	{   0,   0,  0,  0,  0,  0, 0, 0 },
-	{  64,  32,  8,  0,  0,  0, 0, 0 },
-	{  96,  72, 40, 12,  1,  0, 0, 0 },
-	{ 112,  98, 75, 43, 15,  1, 0, 0 },
-	{ 120, 112, 98, 76, 45, 16, 2, 0 }
-};
+static const unsigned char
+		degrade_zero_ticks[CPU_LOAD_IDX_MAX] = {0, 8, 32, 64, 128};
+static const unsigned char
+		degrade_factor[CPU_LOAD_IDX_MAX][DEGRADE_SHIFT + 1] = {
+					{0, 0, 0, 0, 0, 0, 0, 0},
+					{64, 32, 8, 0, 0, 0, 0, 0},
+					{96, 72, 40, 12, 1, 0, 0},
+					{112, 98, 75, 43, 15, 1, 0},
+					{120, 112, 98, 76, 45, 16, 2} };
 
 /*
  * Update cpu_load for any missed ticks, due to tickless idle. The backlog
@@ -4408,46 +4321,14 @@ decay_load_missed(unsigned long load, unsigned long missed_updates, int idx)
 	return load;
 }
 
-/**
- * __update_cpu_load - update the rq->cpu_load[] statistics
- * @this_rq: The rq to update statistics for
- * @this_load: The current load
- * @pending_updates: The number of missed updates
- * @active: !0 for NOHZ_FULL
- *
+/*
  * Update rq->cpu_load[] statistics. This function is usually called every
- * scheduler tick (TICK_NSEC).
- *
- * This function computes a decaying average:
- *
- *   load[i]' = (1 - 1/2^i) * load[i] + (1/2^i) * load
- *
- * Because of NOHZ it might not get called on every tick which gives need for
- * the @pending_updates argument.
- *
- *   load[i]_n = (1 - 1/2^i) * load[i]_n-1 + (1/2^i) * load_n-1
- *             = A * load[i]_n-1 + B ; A := (1 - 1/2^i), B := (1/2^i) * load
- *             = A * (A * load[i]_n-2 + B) + B
- *             = A * (A * (A * load[i]_n-3 + B) + B) + B
- *             = A^3 * load[i]_n-3 + (A^2 + A + 1) * B
- *             = A^n * load[i]_0 + (A^(n-1) + A^(n-2) + ... + 1) * B
- *             = A^n * load[i]_0 + ((1 - A^n) / (1 - A)) * B
- *             = (1 - 1/2^i)^n * (load[i]_0 - load) + load
- *
- * In the above we've assumed load_n := load, which is true for NOHZ_FULL as
- * any change in load would have resulted in the tick being turned back on.
- *
- * For regular NOHZ, this reduces to:
- *
- *   load[i]_n = (1 - 1/2^i)^n * load[i]_0
- *
- * see decay_load_misses(). For NOHZ_FULL we get to subtract and add the extra
- * term. See the @active paramter.
+ * scheduler tick (TICK_NSEC). With tickless idle this will not be called
+ * every tick. We fix it up based on jiffies.
  */
 static void __update_cpu_load(struct rq *this_rq, unsigned long this_load,
-			      unsigned long pending_updates, int active)
+			      unsigned long pending_updates)
 {
-	unsigned long tickless_load = active ? this_rq->cpu_load[0] : 0;
 	int i, scale;
 
 	this_rq->nr_load_updates++;
@@ -4459,9 +4340,8 @@ static void __update_cpu_load(struct rq *this_rq, unsigned long this_load,
 
 		/* scale is effectively 1 << i now, and >> i divides by scale */
 
-		old_load = this_rq->cpu_load[i] - tickless_load;
+		old_load = this_rq->cpu_load[i];
 		old_load = decay_load_missed(old_load, pending_updates - 1, i);
-		old_load += tickless_load;
 		new_load = this_load;
 		/*
 		 * Round up the averaging division if load is increasing. This
@@ -4516,17 +4396,16 @@ static void update_idle_cpu_load(struct rq *this_rq)
 	pending_updates = curr_jiffies - this_rq->last_load_update_tick;
 	this_rq->last_load_update_tick = curr_jiffies;
 
-	__update_cpu_load(this_rq, load, pending_updates, 0);
+	__update_cpu_load(this_rq, load, pending_updates);
 }
 
 /*
  * Called from tick_nohz_idle_exit() -- try and fix up the ticks we missed.
  */
-void update_cpu_load_nohz(int active)
+void update_cpu_load_nohz(void)
 {
 	struct rq *this_rq = this_rq();
 	unsigned long curr_jiffies = READ_ONCE(jiffies);
-	unsigned long load = active ? weighted_cpuload(cpu_of(this_rq)) : 0;
 	unsigned long pending_updates;
 
 	if (curr_jiffies == this_rq->last_load_update_tick)
@@ -4537,11 +4416,10 @@ void update_cpu_load_nohz(int active)
 	if (pending_updates) {
 		this_rq->last_load_update_tick = curr_jiffies;
 		/*
-		 * In the regular NOHZ case, we were idle, this means load 0.
-		 * In the NOHZ_FULL case, we were non-idle, we should consider
-		 * its weighted load.
+		 * We were idle, this means load 0, the current load might be
+		 * !0 due to remote wakeups and the sort.
 		 */
-		__update_cpu_load(this_rq, load, pending_updates, active);
+		__update_cpu_load(this_rq, 0, pending_updates);
 	}
 	raw_spin_unlock(&this_rq->lock);
 }
@@ -4557,7 +4435,7 @@ void update_cpu_load_active(struct rq *this_rq)
 	 * See the mess around update_idle_cpu_load() / update_cpu_load_nohz().
 	 */
 	this_rq->last_load_update_tick = jiffies;
-	__update_cpu_load(this_rq, load, 1, 1);
+	__update_cpu_load(this_rq, load, 1);
 }
 
 /*
@@ -4714,19 +4592,24 @@ static long effective_load(struct task_group *tg, int cpu, long wl, long wg)
 		return wl;
 
 	for_each_sched_entity(se) {
-		long w, W;
+		struct cfs_rq *cfs_rq = se->my_q;
+		long W, w = cfs_rq_load_avg(cfs_rq);
 
-		tg = se->my_q->tg;
+		tg = cfs_rq->tg;
 
 		/*
 		 * W = @wg + \Sum rw_j
 		 */
-		W = wg + calc_tg_weight(tg, se->my_q);
+		W = wg + atomic_long_read(&tg->load_avg);
+
+		/* Ensure \Sum rw_j >= rw_i */
+		W -= cfs_rq->tg_load_avg_contrib;
+		W += w;
 
 		/*
 		 * w = rw_i + @wl
 		 */
-		w = cfs_rq_load_avg(se->my_q) + wl;
+		w += wl;
 
 		/*
 		 * wl = S * s'_i; see (2)
@@ -5144,7 +5027,8 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int sd_flag, int wake_f
 /*
  * Called immediately before a task is migrated to a new cpu; task_cpu(p) and
  * cfs_rq_of(p) references at time of call are still valid and identify the
- * previous cpu. The caller guarantees p->pi_lock or task_rq(p)->lock is held.
+ * previous cpu.  However, the caller only guarantees p->pi_lock is held; no
+ * other assumptions, including the state of rq->lock, should be made.
  */
 static void migrate_task_rq_fair(struct task_struct *p)
 {
@@ -5857,8 +5741,8 @@ static void detach_task(struct task_struct *p, struct lb_env *env)
 {
 	lockdep_assert_held(&env->src_rq->lock);
 
-	p->on_rq = TASK_ON_RQ_MIGRATING;
 	deactivate_task(env->src_rq, p, 0);
+	p->on_rq = TASK_ON_RQ_MIGRATING;
 	set_task_cpu(p, env->dst_cpu);
 }
 
@@ -5991,8 +5875,8 @@ static void attach_task(struct rq *rq, struct task_struct *p)
 	lockdep_assert_held(&rq->lock);
 
 	BUG_ON(task_rq(p) != rq);
-	activate_task(rq, p, 0);
 	p->on_rq = TASK_ON_RQ_QUEUED;
+	activate_task(rq, p, 0);
 	check_preempt_curr(rq, p, 0);
 }
 
@@ -6438,7 +6322,7 @@ static inline void update_sg_lb_stats(struct lb_env *env,
 			bool *overload)
 {
 	unsigned long load;
-	int i, nr_running;
+	int i;
 
 	memset(sgs, 0, sizeof(*sgs));
 
@@ -6455,8 +6339,7 @@ static inline void update_sg_lb_stats(struct lb_env *env,
 		sgs->group_util += cpu_util(i);
 		sgs->sum_nr_running += rq->cfs.h_nr_running;
 
-		nr_running = rq->nr_running;
-		if (nr_running > 1)
+		if (rq->nr_running > 1)
 			*overload = true;
 
 #ifdef CONFIG_NUMA_BALANCING
@@ -6464,10 +6347,7 @@ static inline void update_sg_lb_stats(struct lb_env *env,
 		sgs->nr_preferred_running += rq->nr_preferred_running;
 #endif
 		sgs->sum_weighted_load += weighted_cpuload(i);
-		/*
-		 * No need to call idle_cpu() if nr_running is not 0
-		 */
-		if (!nr_running && idle_cpu(i))
+		if (idle_cpu(i))
 			sgs->idle_cpus++;
 	}
 
@@ -7388,6 +7268,8 @@ static int idle_balance(struct rq *this_rq)
 	int pulled_task = 0;
 	u64 curr_cost = 0;
 
+	idle_enter_fair(this_rq);
+
 	/*
 	 * We must set idle_stamp _before_ calling idle_balance(), such that we
 	 * measure the duration of idle_balance() as idle time.
@@ -7468,8 +7350,10 @@ out:
 	if (this_rq->nr_running != this_rq->cfs.h_nr_running)
 		pulled_task = -1;
 
-	if (pulled_task)
+	if (pulled_task) {
+		idle_exit_fair(this_rq);
 		this_rq->idle_stamp = 0;
+	}
 
 	return pulled_task;
 }

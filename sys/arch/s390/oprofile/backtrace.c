@@ -16,23 +16,24 @@ __show_trace(unsigned int *depth, unsigned long sp,
 	struct pt_regs *regs;
 
 	while (*depth) {
+		sp = sp & PSW_ADDR_INSN;
 		if (sp < low || sp > high - sizeof(*sf))
 			return sp;
 		sf = (struct stack_frame *) sp;
 		(*depth)--;
-		oprofile_add_trace(sf->gprs[8]);
+		oprofile_add_trace(sf->gprs[8] & PSW_ADDR_INSN);
 
 		/* Follow the backchain.  */
 		while (*depth) {
 			low = sp;
-			sp = sf->back_chain;
+			sp = sf->back_chain & PSW_ADDR_INSN;
 			if (!sp)
 				break;
 			if (sp <= low || sp > high - sizeof(*sf))
 				return sp;
 			sf = (struct stack_frame *) sp;
 			(*depth)--;
-			oprofile_add_trace(sf->gprs[8]);
+			oprofile_add_trace(sf->gprs[8] & PSW_ADDR_INSN);
 
 		}
 
@@ -45,7 +46,7 @@ __show_trace(unsigned int *depth, unsigned long sp,
 			return sp;
 		regs = (struct pt_regs *) sp;
 		(*depth)--;
-		oprofile_add_trace(sf->gprs[8]);
+		oprofile_add_trace(sf->gprs[8] & PSW_ADDR_INSN);
 		low = sp;
 		sp = regs->gprs[15];
 	}
@@ -54,13 +55,12 @@ __show_trace(unsigned int *depth, unsigned long sp,
 
 void s390_backtrace(struct pt_regs * const regs, unsigned int depth)
 {
-	unsigned long head, frame_size;
+	unsigned long head;
 	struct stack_frame* head_sf;
 
 	if (user_mode(regs))
 		return;
 
-	frame_size = STACK_FRAME_OVERHEAD + sizeof(struct pt_regs);
 	head = regs->gprs[15];
 	head_sf = (struct stack_frame*)head;
 
@@ -69,9 +69,8 @@ void s390_backtrace(struct pt_regs * const regs, unsigned int depth)
 
 	head = head_sf->back_chain;
 
-	head = __show_trace(&depth, head,
-			    S390_lowcore.async_stack + frame_size - ASYNC_SIZE,
-			    S390_lowcore.async_stack + frame_size);
+	head = __show_trace(&depth, head, S390_lowcore.async_stack - ASYNC_SIZE,
+			    S390_lowcore.async_stack);
 
 	__show_trace(&depth, head, S390_lowcore.thread_info,
 		     S390_lowcore.thread_info + THREAD_SIZE);

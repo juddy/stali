@@ -32,6 +32,20 @@
 #include "vc4_regs.h"
 #include "vc4_trace.h"
 
+#ifdef CONFIG_DEBUG_FS
+int vc4_gem_exec_debugfs(struct seq_file *m, void *unused)
+{
+	struct drm_info_node *node = (struct drm_info_node *)m->private;
+	struct drm_device *dev = node->minor->dev;
+	struct vc4_dev *vc4 = to_vc4_dev(dev);
+
+	seq_printf(m, "Emitted  seqno:   0x%016llx\n", vc4->emit_seqno);
+	seq_printf(m, "Finished seqno:   0x%016llx\n", vc4->finished_seqno);
+
+	return 0;
+}
+#endif /* CONFIG_DEBUG_FS */
+
 static void
 vc4_queue_hangcheck(struct drm_device *dev)
 {
@@ -141,10 +155,10 @@ vc4_save_hang_state(struct drm_device *dev)
 	struct vc4_dev *vc4 = to_vc4_dev(dev);
 	struct drm_vc4_get_hang_state *state;
 	struct vc4_hang_state *kernel_state;
-	struct vc4_exec_info *exec;
+	struct vc4_exec_info *exec[2];
 	struct vc4_bo *bo;
 	unsigned long irqflags;
-	unsigned int i, unref_list_count;
+	unsigned int i, j, unref_list_count, prev_idx;
 
 	kernel_state = kcalloc(1, sizeof(*kernel_state), GFP_KERNEL);
 	if (!kernel_state)
@@ -153,37 +167,55 @@ vc4_save_hang_state(struct drm_device *dev)
 	state = &kernel_state->user_state;
 
 	spin_lock_irqsave(&vc4->job_lock, irqflags);
-	exec = vc4_first_job(vc4);
-	if (!exec) {
+	exec[0] = vc4_first_bin_job(vc4);
+	exec[1] = vc4_first_render_job(vc4);
+	if (!exec[0] && !exec[1]) {
 		spin_unlock_irqrestore(&vc4->job_lock, irqflags);
 		return;
 	}
 
-	unref_list_count = 0;
-	list_for_each_entry(bo, &exec->unref_list, unref_head)
-		unref_list_count++;
+	/* Get the bos from both binner and renderer into hang state. */
+	state->bo_count = 0;
+	for (i = 0; i < 2; i++) {
+		if (!exec[i])
+			continue;
 
-	state->bo_count = exec->bo_count + unref_list_count;
-	kernel_state->bo = kcalloc(state->bo_count, sizeof(*kernel_state->bo),
-				   GFP_ATOMIC);
+		unref_list_count = 0;
+		list_for_each_entry(bo, &exec[i]->unref_list, unref_head)
+			unref_list_count++;
+		state->bo_count += exec[i]->bo_count + unref_list_count;
+	}
+
+	kernel_state->bo = kcalloc(state->bo_count,
+				   sizeof(*kernel_state->bo), GFP_ATOMIC);
+
 	if (!kernel_state->bo) {
 		spin_unlock_irqrestore(&vc4->job_lock, irqflags);
 		return;
 	}
 
-	for (i = 0; i < exec->bo_count; i++) {
-		drm_gem_object_reference(&exec->bo[i]->base);
-		kernel_state->bo[i] = &exec->bo[i]->base;
+	prev_idx = 0;
+	for (i = 0; i < 2; i++) {
+		if (!exec[i])
+			continue;
+
+		for (j = 0; j < exec[i]->bo_count; j++) {
+			drm_gem_object_reference(&exec[i]->bo[j]->base);
+			kernel_state->bo[j + prev_idx] = &exec[i]->bo[j]->base;
+		}
+
+		list_for_each_entry(bo, &exec[i]->unref_list, unref_head) {
+			drm_gem_object_reference(&bo->base.base);
+			kernel_state->bo[j + prev_idx] = &bo->base.base;
+			j++;
+		}
+		prev_idx = j + 1;
 	}
 
-	list_for_each_entry(bo, &exec->unref_list, unref_head) {
-		drm_gem_object_reference(&bo->base.base);
-		kernel_state->bo[i] = &bo->base.base;
-		i++;
-	}
-
-	state->start_bin = exec->ct0ca;
-	state->start_render = exec->ct1ca;
+	if (exec[0])
+		state->start_bin = exec[0]->ct0ca;
+	if (exec[1])
+		state->start_render = exec[1]->ct1ca;
 
 	spin_unlock_irqrestore(&vc4->job_lock, irqflags);
 
@@ -267,13 +299,15 @@ vc4_hangcheck_elapsed(unsigned long data)
 	struct vc4_dev *vc4 = to_vc4_dev(dev);
 	uint32_t ct0ca, ct1ca;
 	unsigned long irqflags;
-	struct vc4_exec_info *exec;
+	struct vc4_exec_info *bin_exec, *render_exec;
 
 	spin_lock_irqsave(&vc4->job_lock, irqflags);
-	exec = vc4_first_job(vc4);
+
+	bin_exec = vc4_first_bin_job(vc4);
+	render_exec = vc4_first_render_job(vc4);
 
 	/* If idle, we can stop watching for hangs. */
-	if (!exec) {
+	if (!bin_exec && !render_exec) {
 		spin_unlock_irqrestore(&vc4->job_lock, irqflags);
 		return;
 	}
@@ -284,9 +318,12 @@ vc4_hangcheck_elapsed(unsigned long data)
 	/* If we've made any progress in execution, rearm the timer
 	 * and wait.
 	 */
-	if (ct0ca != exec->last_ct0ca || ct1ca != exec->last_ct1ca) {
-		exec->last_ct0ca = ct0ca;
-		exec->last_ct1ca = ct1ca;
+	if ((bin_exec && ct0ca != bin_exec->last_ct0ca) ||
+	    (render_exec && ct1ca != render_exec->last_ct1ca)) {
+		if (bin_exec)
+			bin_exec->last_ct0ca = ct0ca;
+		if (render_exec)
+			render_exec->last_ct1ca = ct1ca;
 		spin_unlock_irqrestore(&vc4->job_lock, irqflags);
 		vc4_queue_hangcheck(dev);
 		return;
@@ -386,23 +423,50 @@ vc4_flush_caches(struct drm_device *dev)
  * The job_lock should be held during this.
  */
 void
-vc4_submit_next_job(struct drm_device *dev)
+vc4_submit_next_bin_job(struct drm_device *dev)
 {
 	struct vc4_dev *vc4 = to_vc4_dev(dev);
-	struct vc4_exec_info *exec = vc4_first_job(vc4);
+	struct vc4_exec_info *exec;
 
+again:
+	exec = vc4_first_bin_job(vc4);
 	if (!exec)
 		return;
 
 	vc4_flush_caches(dev);
 
-	/* Disable the binner's pre-loaded overflow memory address */
-	V3D_WRITE(V3D_BPOA, 0);
-	V3D_WRITE(V3D_BPOS, 0);
-
-	if (exec->ct0ca != exec->ct0ea)
+	/* Either put the job in the binner if it uses the binner, or
+	 * immediately move it to the to-be-rendered queue.
+	 */
+	if (exec->ct0ca != exec->ct0ea) {
 		submit_cl(dev, 0, exec->ct0ca, exec->ct0ea);
+	} else {
+		vc4_move_job_to_render(dev, exec);
+		goto again;
+	}
+}
+
+void
+vc4_submit_next_render_job(struct drm_device *dev)
+{
+	struct vc4_dev *vc4 = to_vc4_dev(dev);
+	struct vc4_exec_info *exec = vc4_first_render_job(vc4);
+
+	if (!exec)
+		return;
+
 	submit_cl(dev, 1, exec->ct1ca, exec->ct1ea);
+}
+
+void
+vc4_move_job_to_render(struct drm_device *dev, struct vc4_exec_info *exec)
+{
+	struct vc4_dev *vc4 = to_vc4_dev(dev);
+	bool was_empty = list_empty(&vc4->render_job_list);
+
+	list_move_tail(&exec->head, &vc4->render_job_list);
+	if (was_empty)
+		vc4_submit_next_render_job(dev);
 }
 
 static void
@@ -443,14 +507,14 @@ vc4_queue_submit(struct drm_device *dev, struct vc4_exec_info *exec)
 	exec->seqno = seqno;
 	vc4_update_bo_seqnos(exec, seqno);
 
-	list_add_tail(&exec->head, &vc4->job_list);
+	list_add_tail(&exec->head, &vc4->bin_job_list);
 
 	/* If no job was executing, kick ours off.  Otherwise, it'll
-	 * get started when the previous job's frame done interrupt
+	 * get started when the previous job's flush done interrupt
 	 * occurs.
 	 */
-	if (vc4_first_job(vc4) == exec) {
-		vc4_submit_next_job(dev);
+	if (vc4_first_bin_job(vc4) == exec) {
+		vc4_submit_next_bin_job(dev);
 		vc4_queue_hangcheck(dev);
 	}
 
@@ -520,8 +584,8 @@ vc4_cl_lookup_bos(struct drm_device *dev,
 	spin_unlock(&file_priv->table_lock);
 
 fail:
-	kfree(handles);
-	return 0;
+	drm_free_large(handles);
+	return ret;
 }
 
 static int
@@ -859,7 +923,8 @@ vc4_gem_init(struct drm_device *dev)
 {
 	struct vc4_dev *vc4 = to_vc4_dev(dev);
 
-	INIT_LIST_HEAD(&vc4->job_list);
+	INIT_LIST_HEAD(&vc4->bin_job_list);
+	INIT_LIST_HEAD(&vc4->render_job_list);
 	INIT_LIST_HEAD(&vc4->job_done_list);
 	INIT_LIST_HEAD(&vc4->seqno_cb_list);
 	spin_lock_init(&vc4->job_lock);

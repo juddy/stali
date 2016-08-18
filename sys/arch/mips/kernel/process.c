@@ -65,10 +65,12 @@ void start_thread(struct pt_regs * regs, unsigned long pc, unsigned long sp)
 	status = regs->cp0_status & ~(ST0_CU0|ST0_CU1|ST0_FR|KU_MASK);
 	status |= KU_USER;
 	regs->cp0_status = status;
-	lose_fpu(0);
-	clear_thread_flag(TIF_MSA_CTX_LIVE);
 	clear_used_math();
+	clear_fpu_owner();
 	init_dsp();
+	clear_thread_flag(TIF_USEDMSA);
+	clear_thread_flag(TIF_MSA_CTX_LIVE);
+	disable_msa();
 	regs->cp0_epc = pc;
 	regs->regs[29] = sp;
 }
@@ -455,7 +457,7 @@ unsigned long notrace unwind_stack_by_address(unsigned long stack_page,
 		    *sp + sizeof(*regs) <= stack_page + THREAD_SIZE - 32) {
 			regs = (struct pt_regs *)*sp;
 			pc = regs->cp0_epc;
-			if (__kernel_text_address(pc)) {
+			if (!user_mode(regs) && __kernel_text_address(pc)) {
 				*sp = regs->regs[29];
 				*ra = regs->regs[31];
 				return pc;
@@ -601,6 +603,9 @@ int mips_set_process_fp_mode(struct task_struct *task, unsigned int value)
 	if (!(value & PR_FP_MODE_FR) && cpu_has_fpu && cpu_has_mips_r6)
 		return -EOPNOTSUPP;
 
+	/* Proceed with the mode switch */
+	preempt_disable();
+
 	/* Save FP & vector context, then disable FPU & MSA */
 	if (task->signal == current->signal)
 		lose_fpu(1);
@@ -659,6 +664,7 @@ int mips_set_process_fp_mode(struct task_struct *task, unsigned int value)
 
 	/* Allow threads to use FP again */
 	atomic_set(&task->mm->context.fp_mode_switching, 0);
+	preempt_enable();
 
 	return 0;
 }

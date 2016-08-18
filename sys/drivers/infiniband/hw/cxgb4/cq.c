@@ -162,7 +162,7 @@ static int create_cq(struct c4iw_rdev *rdev, struct t4_cq *cq,
 	cq->bar2_va = c4iw_bar2_addrs(rdev, cq->cqid, T4_BAR2_QTYPE_INGRESS,
 				      &cq->bar2_qid,
 				      user ? &cq->bar2_pa : NULL);
-	if (user && !cq->bar2_va) {
+	if (user && !cq->bar2_pa) {
 		pr_warn(MOD "%s: cqid %u not in BAR2 range.\n",
 			pci_name(rdev->lldi.pdev), cq->cqid);
 		ret = -EINVAL;
@@ -743,6 +743,9 @@ static int c4iw_poll_cq_one(struct c4iw_cq *chp, struct ib_wc *wc)
 		case FW_RI_SEND:
 		case FW_RI_SEND_WITH_SE:
 			wc->opcode = IB_WC_SEND;
+			break;
+		case FW_RI_BIND_MW:
+			wc->opcode = IB_WC_BIND_MW;
 			break;
 
 		case FW_RI_LOCAL_INV:

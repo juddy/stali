@@ -108,7 +108,7 @@ config COH901318
 
 config DMA_BCM2835
 	tristate "BCM2835 DMA engine support"
-	depends on ARCH_BCM2835
+	depends on ARCH_BCM2835 || ARCH_BCM2708 || ARCH_BCM2709
 	select DMA_ENGINE
 	select DMA_VIRTUAL_CHANNELS
 
@@ -431,20 +431,8 @@ config STE_DMA40
 	help
 	  Support for ST-Ericsson DMA40 controller
 
-config STM32_DMA
-	bool "STMicroelectronics STM32 DMA support"
-	depends on ARCH_STM32
-	select DMA_ENGINE
-	select DMA_OF
-	select DMA_VIRTUAL_CHANNELS
-	help
-	  Enable support for the on-chip DMA controller on STMicroelectronics
-	  STM32 MCUs.
-	  If you have a board based on such a MCU and wish to use DMA say Y or M
-	  here.
-
 config S3C24XX_DMAC
-	bool "Samsung S3C24XX DMA support"
+	tristate "Samsung S3C24XX DMA support"
 	depends on ARCH_S3C24XX
 	select DMA_ENGINE
 	select DMA_VIRTUAL_CHANNELS
@@ -481,6 +469,10 @@ config TIMB_DMA
 	select DMA_ENGINE
 	help
 	  Enable support for the Timberdale FPGA DMA engine.
+
+config DMA_BCM2708
+	tristate "BCM2708 DMA legacy API support"
+	depends on DMA_BCM2835
 
 config TI_CPPI41
 	tristate "AM33xx CPPI41 DMA support"

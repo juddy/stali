@@ -229,7 +229,7 @@ void kvm_arch_commit_memory_region(struct kvm *kvm,
 			    kzalloc(npages * sizeof(unsigned long), GFP_KERNEL);
 
 			if (!kvm->arch.guest_pmap) {
-				kvm_err("Failed to allocate guest PMAP\n");
+				kvm_err("Failed to allocate guest PMAP");
 				return;
 			}
 
@@ -313,6 +313,15 @@ struct kvm_vcpu *kvm_arch_vcpu_create(struct kvm *kvm, unsigned int id)
 
 	memcpy(gebase + offset, mips32_GuestException,
 	       mips32_GuestExceptionEnd - mips32_GuestException);
+
+#ifdef MODULE
+	offset += mips32_GuestExceptionEnd - mips32_GuestException;
+	memcpy(gebase + offset, (char *)__kvm_mips_vcpu_run,
+	       __kvm_mips_vcpu_run_end - (char *)__kvm_mips_vcpu_run);
+	vcpu->arch.vcpu_run = gebase + offset;
+#else
+	vcpu->arch.vcpu_run = __kvm_mips_vcpu_run;
+#endif
 
 	/* Invalidate the icache for these ranges */
 	local_flush_icache_range((unsigned long)gebase,
@@ -403,7 +412,7 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu, struct kvm_run *run)
 	/* Disable hardware page table walking while in guest */
 	htw_stop();
 
-	r = __kvm_mips_vcpu_run(run, vcpu);
+	r = vcpu->arch.vcpu_run(run, vcpu);
 
 	/* Re-enable HTW before enabling interrupts */
 	htw_start();
@@ -1264,8 +1273,8 @@ int kvm_mips_handle_exit(struct kvm_run *run, struct kvm_vcpu *vcpu)
 	}
 
 	switch (exccode) {
-	case EXCCODE_INT:
-		kvm_debug("[%d]EXCCODE_INT @ %p\n", vcpu->vcpu_id, opc);
+	case T_INT:
+		kvm_debug("[%d]T_INT @ %p\n", vcpu->vcpu_id, opc);
 
 		++vcpu->stat.int_exits;
 		trace_kvm_exit(vcpu, INT_EXITS);
@@ -1276,8 +1285,8 @@ int kvm_mips_handle_exit(struct kvm_run *run, struct kvm_vcpu *vcpu)
 		ret = RESUME_GUEST;
 		break;
 
-	case EXCCODE_CPU:
-		kvm_debug("EXCCODE_CPU: @ PC: %p\n", opc);
+	case T_COP_UNUSABLE:
+		kvm_debug("T_COP_UNUSABLE: @ PC: %p\n", opc);
 
 		++vcpu->stat.cop_unusable_exits;
 		trace_kvm_exit(vcpu, COP_UNUSABLE_EXITS);
@@ -1287,13 +1296,13 @@ int kvm_mips_handle_exit(struct kvm_run *run, struct kvm_vcpu *vcpu)
 			ret = RESUME_HOST;
 		break;
 
-	case EXCCODE_MOD:
+	case T_TLB_MOD:
 		++vcpu->stat.tlbmod_exits;
 		trace_kvm_exit(vcpu, TLBMOD_EXITS);
 		ret = kvm_mips_callbacks->handle_tlb_mod(vcpu);
 		break;
 
-	case EXCCODE_TLBS:
+	case T_TLB_ST_MISS:
 		kvm_debug("TLB ST fault:  cause %#x, status %#lx, PC: %p, BadVaddr: %#lx\n",
 			  cause, kvm_read_c0_guest_status(vcpu->arch.cop0), opc,
 			  badvaddr);
@@ -1303,7 +1312,7 @@ int kvm_mips_handle_exit(struct kvm_run *run, struct kvm_vcpu *vcpu)
 		ret = kvm_mips_callbacks->handle_tlb_st_miss(vcpu);
 		break;
 
-	case EXCCODE_TLBL:
+	case T_TLB_LD_MISS:
 		kvm_debug("TLB LD fault: cause %#x, PC: %p, BadVaddr: %#lx\n",
 			  cause, opc, badvaddr);
 
@@ -1312,55 +1321,55 @@ int kvm_mips_handle_exit(struct kvm_run *run, struct kvm_vcpu *vcpu)
 		ret = kvm_mips_callbacks->handle_tlb_ld_miss(vcpu);
 		break;
 
-	case EXCCODE_ADES:
+	case T_ADDR_ERR_ST:
 		++vcpu->stat.addrerr_st_exits;
 		trace_kvm_exit(vcpu, ADDRERR_ST_EXITS);
 		ret = kvm_mips_callbacks->handle_addr_err_st(vcpu);
 		break;
 
-	case EXCCODE_ADEL:
+	case T_ADDR_ERR_LD:
 		++vcpu->stat.addrerr_ld_exits;
 		trace_kvm_exit(vcpu, ADDRERR_LD_EXITS);
 		ret = kvm_mips_callbacks->handle_addr_err_ld(vcpu);
 		break;
 
-	case EXCCODE_SYS:
+	case T_SYSCALL:
 		++vcpu->stat.syscall_exits;
 		trace_kvm_exit(vcpu, SYSCALL_EXITS);
 		ret = kvm_mips_callbacks->handle_syscall(vcpu);
 		break;
 
-	case EXCCODE_RI:
+	case T_RES_INST:
 		++vcpu->stat.resvd_inst_exits;
 		trace_kvm_exit(vcpu, RESVD_INST_EXITS);
 		ret = kvm_mips_callbacks->handle_res_inst(vcpu);
 		break;
 
-	case EXCCODE_BP:
+	case T_BREAK:
 		++vcpu->stat.break_inst_exits;
 		trace_kvm_exit(vcpu, BREAK_INST_EXITS);
 		ret = kvm_mips_callbacks->handle_break(vcpu);
 		break;
 
-	case EXCCODE_TR:
+	case T_TRAP:
 		++vcpu->stat.trap_inst_exits;
 		trace_kvm_exit(vcpu, TRAP_INST_EXITS);
 		ret = kvm_mips_callbacks->handle_trap(vcpu);
 		break;
 
-	case EXCCODE_MSAFPE:
+	case T_MSAFPE:
 		++vcpu->stat.msa_fpe_exits;
 		trace_kvm_exit(vcpu, MSA_FPE_EXITS);
 		ret = kvm_mips_callbacks->handle_msa_fpe(vcpu);
 		break;
 
-	case EXCCODE_FPE:
+	case T_FPE:
 		++vcpu->stat.fpe_exits;
 		trace_kvm_exit(vcpu, FPE_EXITS);
 		ret = kvm_mips_callbacks->handle_fpe(vcpu);
 		break;
 
-	case EXCCODE_MSADIS:
+	case T_MSADIS:
 		++vcpu->stat.msa_disabled_exits;
 		trace_kvm_exit(vcpu, MSA_DISABLED_EXITS);
 		ret = kvm_mips_callbacks->handle_msa_disabled(vcpu);
@@ -1620,7 +1629,7 @@ static struct notifier_block kvm_mips_csr_die_notifier = {
 	.notifier_call = kvm_mips_csr_die_notify,
 };
 
-static int __init kvm_mips_init(void)
+int __init kvm_mips_init(void)
 {
 	int ret;
 
@@ -1646,7 +1655,7 @@ static int __init kvm_mips_init(void)
 	return 0;
 }
 
-static void __exit kvm_mips_exit(void)
+void __exit kvm_mips_exit(void)
 {
 	kvm_exit();
 

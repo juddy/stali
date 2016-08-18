@@ -830,7 +830,9 @@ static int setup_netdev(struct l2cap_chan *chan, struct lowpan_dev **dev)
 	list_add_rcu(&(*dev)->list, &bt_6lowpan_devices);
 	spin_unlock(&devices_lock);
 
-	err = lowpan_register_netdev(netdev, LOWPAN_LLTYPE_BTLE);
+	lowpan_netdev_setup(netdev, LOWPAN_LLTYPE_BTLE);
+
+	err = register_netdev(netdev);
 	if (err < 0) {
 		BT_INFO("register_netdev failed %d", err);
 		spin_lock(&devices_lock);
@@ -893,7 +895,7 @@ static void delete_netdev(struct work_struct *work)
 	struct lowpan_dev *entry = container_of(work, struct lowpan_dev,
 						delete_netdev);
 
-	lowpan_unregister_netdev(entry->netdev);
+	unregister_netdev(entry->netdev);
 
 	/* The entry pointer is deleted by the netdev destructor. */
 }
@@ -1351,7 +1353,7 @@ static void disconnect_devices(void)
 		ifdown(entry->netdev);
 		BT_DBG("Unregistering netdev %s %p",
 		       entry->netdev->name, entry->netdev);
-		lowpan_unregister_netdev(entry->netdev);
+		unregister_netdev(entry->netdev);
 		kfree(entry);
 	}
 }

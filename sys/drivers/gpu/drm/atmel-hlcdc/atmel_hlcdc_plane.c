@@ -335,6 +335,8 @@ atmel_hlcdc_plane_update_pos_and_size(struct atmel_hlcdc_plane *plane,
 
 		atmel_hlcdc_layer_update_cfg(&plane->layer, 13, 0xffffffff,
 					     factor_reg);
+	} else {
+		atmel_hlcdc_layer_update_cfg(&plane->layer, 13, 0xffffffff, 0);
 	}
 }
 
@@ -941,7 +943,7 @@ atmel_hlcdc_plane_create(struct drm_device *dev,
 	ret = drm_universal_plane_init(dev, &plane->base, 0,
 				       &layer_plane_funcs,
 				       desc->formats->formats,
-				       desc->formats->nformats, type, NULL);
+				       desc->formats->nformats, type);
 	if (ret)
 		return ERR_PTR(ret);
 

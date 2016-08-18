@@ -1557,6 +1557,8 @@ static int vsock_stream_sendmsg(struct socket *sock, struct msghdr *msg,
 	if (err < 0)
 		goto out;
 
+	prepare_to_wait(sk_sleep(sk), &wait, TASK_INTERRUPTIBLE);
+
 	while (total_written < len) {
 		ssize_t written;
 
@@ -1576,9 +1578,7 @@ static int vsock_stream_sendmsg(struct socket *sock, struct msghdr *msg,
 				goto out_wait;
 
 			release_sock(sk);
-			prepare_to_wait(sk_sleep(sk), &wait, TASK_INTERRUPTIBLE);
 			timeout = schedule_timeout(timeout);
-			finish_wait(sk_sleep(sk), &wait);
 			lock_sock(sk);
 			if (signal_pending(current)) {
 				err = sock_intr_errno(timeout);
@@ -1588,6 +1588,8 @@ static int vsock_stream_sendmsg(struct socket *sock, struct msghdr *msg,
 				goto out_wait;
 			}
 
+			prepare_to_wait(sk_sleep(sk), &wait,
+					TASK_INTERRUPTIBLE);
 		}
 
 		/* These checks occur both as part of and after the loop
@@ -1633,6 +1635,7 @@ static int vsock_stream_sendmsg(struct socket *sock, struct msghdr *msg,
 out_wait:
 	if (total_written > 0)
 		err = total_written;
+	finish_wait(sk_sleep(sk), &wait);
 out:
 	release_sock(sk);
 	return err;
@@ -1713,6 +1716,7 @@ vsock_stream_recvmsg(struct socket *sock, struct msghdr *msg, size_t len,
 	if (err < 0)
 		goto out;
 
+	prepare_to_wait(sk_sleep(sk), &wait, TASK_INTERRUPTIBLE);
 
 	while (1) {
 		s64 ready = vsock_stream_has_data(vsk);
@@ -1723,7 +1727,7 @@ vsock_stream_recvmsg(struct socket *sock, struct msghdr *msg, size_t len,
 			 */
 
 			err = -ENOMEM;
-			goto out;
+			goto out_wait;
 		} else if (ready > 0) {
 			ssize_t read;
 
@@ -1746,7 +1750,7 @@ vsock_stream_recvmsg(struct socket *sock, struct msghdr *msg, size_t len,
 					vsk, target, read,
 					!(flags & MSG_PEEK), &recv_data);
 			if (err < 0)
-				goto out;
+				goto out_wait;
 
 			if (read >= target || flags & MSG_PEEK)
 				break;
@@ -1769,9 +1773,7 @@ vsock_stream_recvmsg(struct socket *sock, struct msghdr *msg, size_t len,
 				break;
 
 			release_sock(sk);
-			prepare_to_wait(sk_sleep(sk), &wait, TASK_INTERRUPTIBLE);
 			timeout = schedule_timeout(timeout);
-			finish_wait(sk_sleep(sk), &wait);
 			lock_sock(sk);
 
 			if (signal_pending(current)) {
@@ -1781,6 +1783,9 @@ vsock_stream_recvmsg(struct socket *sock, struct msghdr *msg, size_t len,
 				err = -EAGAIN;
 				break;
 			}
+
+			prepare_to_wait(sk_sleep(sk), &wait,
+					TASK_INTERRUPTIBLE);
 		}
 	}
 
@@ -1789,28 +1794,11 @@ vsock_stream_recvmsg(struct socket *sock, struct msghdr *msg, size_t len,
 	else if (sk->sk_shutdown & RCV_SHUTDOWN)
 		err = 0;
 
-	if (copied > 0) {
-		/* We only do these additional bookkeeping/notification steps
-		 * if we actually copied something out of the queue pair
-		 * instead of just peeking ahead.
-		 */
-
-		if (!(flags & MSG_PEEK)) {
-			/* If the other side has shutdown for sending and there
-			 * is nothing more to read, then modify the socket
-			 * state.
-			 */
-			if (vsk->peer_shutdown & SEND_SHUTDOWN) {
-				if (vsock_stream_has_data(vsk) <= 0) {
-					sk->sk_state = SS_UNCONNECTED;
-					sock_set_flag(sk, SOCK_DONE);
-					sk->sk_state_change(sk);
-				}
-			}
-		}
+	if (copied > 0)
 		err = copied;
-	}
 
+out_wait:
+	finish_wait(sk_sleep(sk), &wait);
 out:
 	release_sock(sk);
 	return err;

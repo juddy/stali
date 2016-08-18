@@ -1551,11 +1551,12 @@ noinline int btrfs_cow_block(struct btrfs_trans_handle *trans,
 		       trans->transid, root->fs_info->generation);
 
 	if (!should_cow_block(trans, root, buf)) {
+		trans->dirty = true;
 		*cow_ret = buf;
 		return 0;
 	}
 
-	search_start = buf->start & ~((u64)SZ_1G - 1);
+	search_start = buf->start & ~((u64)(1024 * 1024 * 1024) - 1);
 
 	if (parent)
 		btrfs_set_lock_blocking(parent);
@@ -2248,6 +2249,7 @@ static void reada_for_search(struct btrfs_root *root,
 	u64 target;
 	u64 nread = 0;
 	u64 gen;
+	int direction = path->reada;
 	struct extent_buffer *eb;
 	u32 nr;
 	u32 blocksize;
@@ -2275,16 +2277,16 @@ static void reada_for_search(struct btrfs_root *root,
 	nr = slot;
 
 	while (1) {
-		if (path->reada == READA_BACK) {
+		if (direction < 0) {
 			if (nr == 0)
 				break;
 			nr--;
-		} else if (path->reada == READA_FORWARD) {
+		} else if (direction > 0) {
 			nr++;
 			if (nr >= nritems)
 				break;
 		}
-		if (path->reada == READA_BACK && objectid) {
+		if (path->reada < 0 && objectid) {
 			btrfs_node_key(node, &disk_key, nr);
 			if (btrfs_disk_key_objectid(&disk_key) != objectid)
 				break;
@@ -2492,7 +2494,7 @@ read_block_for_search(struct btrfs_trans_handle *trans,
 	btrfs_set_path_blocking(p);
 
 	free_extent_buffer(tmp);
-	if (p->reada != READA_NONE)
+	if (p->reada)
 		reada_for_search(root, p, level, slot, key->objectid);
 
 	btrfs_release_path(p);
@@ -2772,8 +2774,10 @@ again:
 			 * then we don't want to set the path blocking,
 			 * so we test it here
 			 */
-			if (!should_cow_block(trans, root, b))
+			if (!should_cow_block(trans, root, b)) {
+				trans->dirty = true;
 				goto cow_done;
+			}
 
 			/*
 			 * must have write locks on this node and the

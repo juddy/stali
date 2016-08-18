@@ -185,6 +185,10 @@ void __iomem *c4iw_bar2_addrs(struct c4iw_rdev *rdev, unsigned int qid,
 
 	if (pbar2_pa)
 		*pbar2_pa = (rdev->bar2_pa + bar2_qoffset) & PAGE_MASK;
+
+	if (is_t4(rdev->lldi.adapter_type))
+		return NULL;
+
 	return rdev->bar2_kva + bar2_qoffset;
 }
 
@@ -270,7 +274,7 @@ static int create_qp(struct c4iw_rdev *rdev, struct t4_wq *wq,
 	/*
 	 * User mode must have bar2 access.
 	 */
-	if (user && (!wq->sq.bar2_va || !wq->rq.bar2_va)) {
+	if (user && (!wq->sq.bar2_pa || !wq->rq.bar2_pa)) {
 		pr_warn(MOD "%s: sqid %u or rqid %u not in BAR2 range.\n",
 			pci_name(rdev->lldi.pdev), wq->sq.qid, wq->rq.qid);
 		goto free_dma;
@@ -931,6 +935,11 @@ int c4iw_post_receive(struct ib_qp *ibqp, struct ib_recv_wr *wr,
 		ring_kernel_rq_db(qhp, idx);
 	}
 	return err;
+}
+
+int c4iw_bind_mw(struct ib_qp *qp, struct ib_mw *mw, struct ib_mw_bind *mw_bind)
+{
+	return -ENOSYS;
 }
 
 static inline void build_term_codes(struct t4_cqe *err_cqe, u8 *layer_type,

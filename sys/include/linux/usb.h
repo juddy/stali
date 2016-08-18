@@ -510,6 +510,7 @@ struct usb3_lpm_parameters {
  * @usb2_hw_lpm_besl_capable: device can perform USB2 hardware BESL LPM
  * @usb2_hw_lpm_enabled: USB2 hardware LPM is enabled
  * @usb2_hw_lpm_allowed: Userspace allows USB 2.0 LPM to be enabled
+ * @usb3_lpm_enabled: USB3 hardware LPM enabled
  * @usb3_lpm_u1_enabled: USB3 hardware U1 LPM enabled
  * @usb3_lpm_u2_enabled: USB3 hardware U2 LPM enabled
  * @string_langid: language ID for strings
@@ -584,6 +585,7 @@ struct usb_device {
 	unsigned usb2_hw_lpm_besl_capable:1;
 	unsigned usb2_hw_lpm_enabled:1;
 	unsigned usb2_hw_lpm_allowed:1;
+	unsigned usb3_lpm_enabled:1;
 	unsigned usb3_lpm_u1_enabled:1;
 	unsigned usb3_lpm_u2_enabled:1;
 	int string_langid;
@@ -1066,7 +1068,7 @@ struct usbdrv_wrap {
  *	for interfaces bound to this driver.
  * @soft_unbind: if set to 1, the USB core will not kill URBs and disable
  *	endpoints before calling the driver's disconnect method.
- * @disable_hub_initiated_lpm: if set to 0, the USB core will not allow hubs
+ * @disable_hub_initiated_lpm: if set to 1, the USB core will not allow hubs
  *	to initiate lower power link state transitions when an idle timeout
  *	occurs.  Device-initiated USB 3.0 link PM will still be allowed.
  *

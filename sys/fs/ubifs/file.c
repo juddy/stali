@@ -52,6 +52,7 @@
 #include "ubifs.h"
 #include <linux/mount.h>
 #include <linux/slab.h>
+#include <linux/migrate.h>
 
 static int read_block(struct inode *inode, void *addr, unsigned int block,
 		      struct ubifs_data_node *dn)
@@ -1317,7 +1318,7 @@ int ubifs_fsync(struct file *file, loff_t start, loff_t end, int datasync)
 	err = filemap_write_and_wait_range(inode->i_mapping, start, end);
 	if (err)
 		return err;
-	inode_lock(inode);
+	mutex_lock(&inode->i_mutex);
 
 	/* Synchronize the inode unless this is a 'datasync()' call. */
 	if (!datasync || (inode->i_state & I_DIRTY_DATASYNC)) {
@@ -1332,7 +1333,7 @@ int ubifs_fsync(struct file *file, loff_t start, loff_t end, int datasync)
 	 */
 	err = ubifs_sync_wbufs_by_inode(c, inode);
 out:
-	inode_unlock(inode);
+	mutex_unlock(&inode->i_mutex);
 	return err;
 }
 
@@ -1451,6 +1452,26 @@ static int ubifs_set_page_dirty(struct page *page)
 	ubifs_assert(ret == 0);
 	return ret;
 }
+
+#ifdef CONFIG_MIGRATION
+static int ubifs_migrate_page(struct address_space *mapping,
+		struct page *newpage, struct page *page, enum migrate_mode mode)
+{
+	int rc;
+
+	rc = migrate_page_move_mapping(mapping, newpage, page, NULL, mode, 0);
+	if (rc != MIGRATEPAGE_SUCCESS)
+		return rc;
+
+	if (PagePrivate(page)) {
+		ClearPagePrivate(page);
+		SetPagePrivate(newpage);
+	}
+
+	migrate_page_copy(newpage, page);
+	return MIGRATEPAGE_SUCCESS;
+}
+#endif
 
 static int ubifs_releasepage(struct page *page, gfp_t unused_gfp_flags)
 {
@@ -1591,6 +1612,9 @@ const struct address_space_operations ubifs_file_address_operations = {
 	.write_end      = ubifs_write_end,
 	.invalidatepage = ubifs_invalidatepage,
 	.set_page_dirty = ubifs_set_page_dirty,
+#ifdef CONFIG_MIGRATION
+	.migratepage	= ubifs_migrate_page,
+#endif
 	.releasepage    = ubifs_releasepage,
 };
 
@@ -1608,7 +1632,7 @@ const struct inode_operations ubifs_file_inode_operations = {
 
 const struct inode_operations ubifs_symlink_inode_operations = {
 	.readlink    = generic_readlink,
-	.get_link    = simple_get_link,
+	.follow_link = simple_follow_link,
 	.setattr     = ubifs_setattr,
 	.getattr     = ubifs_getattr,
 	.setxattr    = ubifs_setxattr,

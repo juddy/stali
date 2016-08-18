@@ -149,7 +149,7 @@ out_close:
 	return 0;
 }
 
-int test__rdpmc(int subtest __maybe_unused)
+int test__rdpmc(void)
 {
 	int status = 0;
 	int wret = 0;

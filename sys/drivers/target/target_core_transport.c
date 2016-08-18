@@ -341,6 +341,7 @@ void __transport_register_session(
 					&buf[0], PR_REG_ISID_LEN);
 			se_sess->sess_bin_isid = get_unaligned_be64(&buf[0]);
 		}
+		kref_get(&se_nacl->acl_kref);
 
 		spin_lock_irq(&se_nacl->nacl_sess_lock);
 		/*
@@ -383,9 +384,9 @@ static void target_release_session(struct kref *kref)
 	se_tpg->se_tpg_tfo->close_session(se_sess);
 }
 
-int target_get_session(struct se_session *se_sess)
+void target_get_session(struct se_session *se_sess)
 {
-	return kref_get_unless_zero(&se_sess->sess_kref);
+	kref_get(&se_sess->sess_kref);
 }
 EXPORT_SYMBOL(target_get_session);
 
@@ -431,7 +432,6 @@ void target_put_nacl(struct se_node_acl *nacl)
 {
 	kref_put(&nacl->acl_kref, target_complete_nacl);
 }
-EXPORT_SYMBOL(target_put_nacl);
 
 void transport_deregister_session_configfs(struct se_session *se_sess)
 {
@@ -464,15 +464,6 @@ EXPORT_SYMBOL(transport_deregister_session_configfs);
 
 void transport_free_session(struct se_session *se_sess)
 {
-	struct se_node_acl *se_nacl = se_sess->se_node_acl;
-	/*
-	 * Drop the se_node_acl->nacl_kref obtained from within
-	 * core_tpg_get_initiator_node_acl().
-	 */
-	if (se_nacl) {
-		se_sess->se_node_acl = NULL;
-		target_put_nacl(se_nacl);
-	}
 	if (se_sess->sess_cmd_map) {
 		percpu_ida_destroy(&se_sess->sess_tag_pool);
 		kvfree(se_sess->sess_cmd_map);
@@ -487,7 +478,7 @@ void transport_deregister_session(struct se_session *se_sess)
 	const struct target_core_fabric_ops *se_tfo;
 	struct se_node_acl *se_nacl;
 	unsigned long flags;
-	bool drop_nacl = false;
+	bool comp_nacl = true, drop_nacl = false;
 
 	if (!se_tpg) {
 		transport_free_session(se_sess);
@@ -511,6 +502,7 @@ void transport_deregister_session(struct se_session *se_sess)
 	if (se_nacl && se_nacl->dynamic_node_acl) {
 		if (!se_tfo->tpg_check_demo_mode_cache(se_tpg)) {
 			list_del(&se_nacl->acl_list);
+			se_tpg->num_node_acls--;
 			drop_nacl = true;
 		}
 	}
@@ -519,16 +511,18 @@ void transport_deregister_session(struct se_session *se_sess)
 	if (drop_nacl) {
 		core_tpg_wait_for_nacl_pr_ref(se_nacl);
 		core_free_device_list_for_node(se_nacl, se_tpg);
-		se_sess->se_node_acl = NULL;
 		kfree(se_nacl);
+		comp_nacl = false;
 	}
 	pr_debug("TARGET_CORE[%s]: Deregistered fabric_sess\n",
 		se_tpg->se_tpg_tfo->get_fabric_name());
 	/*
 	 * If last kref is dropping now for an explicit NodeACL, awake sleeping
 	 * ->acl_free_comp caller to wakeup configfs se_node_acl->acl_group
-	 * removal context from within transport_free_session() code.
+	 * removal context.
 	 */
+	if (se_nacl && comp_nacl)
+		target_put_nacl(se_nacl);
 
 	transport_free_session(se_sess);
 }
@@ -693,6 +687,15 @@ void target_complete_cmd(struct se_cmd *cmd, u8 scsi_status)
 	}
 
 	/*
+	 * See if we are waiting to complete for an exception condition.
+	 */
+	if (cmd->transport_state & CMD_T_REQUEST_STOP) {
+		spin_unlock_irqrestore(&cmd->t_state_lock, flags);
+		complete(&cmd->task_stop_comp);
+		return;
+	}
+
+	/*
 	 * Check for case where an explicit ABORT_TASK has been received
 	 * and transport_wait_for_tasks() will be waiting for completion..
 	 */
@@ -711,10 +714,7 @@ void target_complete_cmd(struct se_cmd *cmd, u8 scsi_status)
 	cmd->transport_state |= (CMD_T_COMPLETE | CMD_T_ACTIVE);
 	spin_unlock_irqrestore(&cmd->t_state_lock, flags);
 
-	if (cmd->se_cmd_flags & SCF_USE_CPUID)
-		queue_work_on(cmd->cpuid, target_completion_wq, &cmd->work);
-	else
-		queue_work(target_completion_wq, &cmd->work);
+	queue_work(target_completion_wq, &cmd->work);
 }
 EXPORT_SYMBOL(target_complete_cmd);
 
@@ -1193,6 +1193,7 @@ void transport_init_se_cmd(
 	INIT_LIST_HEAD(&cmd->state_list);
 	init_completion(&cmd->t_transport_stop_comp);
 	init_completion(&cmd->cmd_wait_comp);
+	init_completion(&cmd->task_stop_comp);
 	spin_lock_init(&cmd->t_state_lock);
 	kref_init(&cmd->cmd_kref);
 	cmd->transport_state = CMD_T_DEV_ACTIVE;
@@ -1307,7 +1308,7 @@ EXPORT_SYMBOL(target_setup_cmd_from_cdb);
 
 /*
  * Used by fabric module frontends to queue tasks directly.
- * May only be used from process context.
+ * Many only be used from process context only
  */
 int transport_handle_cdb_direct(
 	struct se_cmd *cmd)
@@ -1426,12 +1427,6 @@ int target_submit_cmd_map_sgls(struct se_cmd *se_cmd, struct se_session *se_sess
 	 */
 	transport_init_se_cmd(se_cmd, se_tpg->se_tpg_tfo, se_sess,
 				data_length, data_dir, task_attr, sense);
-
-	if (flags & TARGET_SCF_USE_CPUID)
-		se_cmd->se_cmd_flags |= SCF_USE_CPUID;
-	else
-		se_cmd->cpuid = WORK_CPU_UNBOUND;
-
 	if (flags & TARGET_SCF_UNKNOWN_SIZE)
 		se_cmd->unknown_data_length = 1;
 	/*
@@ -1586,7 +1581,7 @@ static void target_complete_tmr_failure(struct work_struct *work)
 int target_submit_tmr(struct se_cmd *se_cmd, struct se_session *se_sess,
 		unsigned char *sense, u64 unpacked_lun,
 		void *fabric_tmr_ptr, unsigned char tm_type,
-		gfp_t gfp, u64 tag, int flags)
+		gfp_t gfp, unsigned int tag, int flags)
 {
 	struct se_portal_group *se_tpg;
 	int ret;
@@ -1628,6 +1623,33 @@ int target_submit_tmr(struct se_cmd *se_cmd, struct se_session *se_sess,
 	return 0;
 }
 EXPORT_SYMBOL(target_submit_tmr);
+
+/*
+ * If the cmd is active, request it to be stopped and sleep until it
+ * has completed.
+ */
+bool target_stop_cmd(struct se_cmd *cmd, unsigned long *flags)
+	__releases(&cmd->t_state_lock)
+	__acquires(&cmd->t_state_lock)
+{
+	bool was_active = false;
+
+	if (cmd->transport_state & CMD_T_BUSY) {
+		cmd->transport_state |= CMD_T_REQUEST_STOP;
+		spin_unlock_irqrestore(&cmd->t_state_lock, *flags);
+
+		pr_debug("cmd %p waiting to complete\n", cmd);
+		wait_for_completion(&cmd->task_stop_comp);
+		pr_debug("cmd %p stopped successfully\n", cmd);
+
+		spin_lock_irqsave(&cmd->t_state_lock, *flags);
+		cmd->transport_state &= ~CMD_T_REQUEST_STOP;
+		cmd->transport_state &= ~CMD_T_BUSY;
+		was_active = true;
+	}
+
+	return was_active;
+}
 
 /*
  * Handle SAM-esque emulation for generic transport request failures.
@@ -2596,8 +2618,6 @@ void target_wait_for_sess_cmds(struct se_session *se_sess)
 
 	list_for_each_entry_safe(se_cmd, tmp_cmd,
 				&se_sess->sess_wait_list, se_cmd_list) {
-		list_del_init(&se_cmd->se_cmd_list);
-
 		pr_debug("Waiting for se_cmd: %p t_state: %d, fabric state:"
 			" %d\n", se_cmd, se_cmd->t_state,
 			se_cmd->se_tfo->get_cmd_state(se_cmd));

@@ -57,7 +57,8 @@ int kvm_async_pf_init(void)
 
 void kvm_async_pf_deinit(void)
 {
-	kmem_cache_destroy(async_pf_cache);
+	if (async_pf_cache)
+		kmem_cache_destroy(async_pf_cache);
 	async_pf_cache = NULL;
 }
 

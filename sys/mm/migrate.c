@@ -165,9 +165,9 @@ static int remove_migration_pte(struct page *new, struct vm_area_struct *vma,
 		if (PageAnon(new))
 			hugepage_add_anon_rmap(new, vma, addr);
 		else
-			page_dup_rmap(new, true);
+			page_dup_rmap(new);
 	} else if (PageAnon(new))
-		page_add_anon_rmap(new, vma, addr, false);
+		page_add_anon_rmap(new, vma, addr);
 	else
 		page_add_file_rmap(new);
 
@@ -429,6 +429,7 @@ int migrate_page_move_mapping(struct address_space *mapping,
 
 	return MIGRATEPAGE_SUCCESS;
 }
+EXPORT_SYMBOL(migrate_page_move_mapping);
 
 /*
  * The expected number of remaining references is the same as that
@@ -579,6 +580,7 @@ void migrate_page_copy(struct page *newpage, struct page *page)
 	if (PageWriteback(newpage))
 		end_page_writeback(newpage);
 }
+EXPORT_SYMBOL(migrate_page_copy);
 
 /************************************************************
  *                    Migration functions
@@ -943,13 +945,9 @@ static ICE_noinline int unmap_and_move(new_page_t get_new_page,
 		goto out;
 	}
 
-	if (unlikely(PageTransHuge(page))) {
-		lock_page(page);
-		rc = split_huge_page(page);
-		unlock_page(page);
-		if (rc)
+	if (unlikely(PageTransHuge(page)))
+		if (unlikely(split_huge_page(page)))
 			goto out;
-	}
 
 	rc = __unmap_and_move(page, newpage, force, mode);
 	if (rc == MIGRATEPAGE_SUCCESS)
@@ -967,7 +965,13 @@ out:
 		dec_zone_page_state(page, NR_ISOLATED_ANON +
 				page_is_file_cache(page));
 		/* Soft-offlined page shouldn't go through lru cache list */
-		if (reason == MR_MEMORY_FAILURE) {
+		if (reason == MR_MEMORY_FAILURE && rc == MIGRATEPAGE_SUCCESS) {
+			/*
+			 * With this release, we free successfully migrated
+			 * page and set PG_HWPoison on just freed page
+			 * intentionally. Although it's rather weird, it's how
+			 * HWPoison flag works at the moment.
+			 */
 			put_page(page);
 			if (!test_set_page_hwpoison(page))
 				num_poisoned_pages_inc();
@@ -1760,7 +1764,6 @@ int migrate_misplaced_transhuge_page(struct mm_struct *mm,
 		HPAGE_PMD_ORDER);
 	if (!new_page)
 		goto out_fail;
-	prep_transhuge_page(new_page);
 
 	isolated = numamigrate_isolate_page(pgdat, page);
 	if (!isolated) {
@@ -1772,7 +1775,7 @@ int migrate_misplaced_transhuge_page(struct mm_struct *mm,
 		flush_tlb_range(vma, mmun_start, mmun_end);
 
 	/* Prepare a page as a migration target */
-	__SetPageLocked(new_page);
+	__set_page_locked(new_page);
 	SetPageSwapBacked(new_page);
 
 	/* anon mapping, we can simply copy page->mapping to the new page: */
@@ -1820,7 +1823,7 @@ fail_putback:
 	 * guarantee the copy is visible before the pagetable update.
 	 */
 	flush_cache_range(vma, mmun_start, mmun_end);
-	page_add_anon_rmap(new_page, vma, mmun_start, true);
+	page_add_anon_rmap(new_page, vma, mmun_start);
 	pmdp_huge_clear_flush_notify(vma, mmun_start, pmd);
 	set_pmd_at(mm, mmun_start, pmd, entry);
 	flush_tlb_range(vma, mmun_start, mmun_end);
@@ -1831,14 +1834,14 @@ fail_putback:
 		flush_tlb_range(vma, mmun_start, mmun_end);
 		mmu_notifier_invalidate_range(mm, mmun_start, mmun_end);
 		update_mmu_cache_pmd(vma, address, &entry);
-		page_remove_rmap(new_page, true);
+		page_remove_rmap(new_page);
 		goto fail_putback;
 	}
 
 	mlock_migrate_page(new_page, page);
 	set_page_memcg(new_page, page_memcg(page));
 	set_page_memcg(page, NULL);
-	page_remove_rmap(page, true);
+	page_remove_rmap(page);
 
 	spin_unlock(ptl);
 	mmu_notifier_invalidate_range_end(mm, mmun_start, mmun_end);

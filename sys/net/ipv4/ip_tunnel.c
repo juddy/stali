@@ -30,6 +30,7 @@
 #include <linux/tcp.h>
 #include <linux/udp.h>
 #include <linux/if_arp.h>
+#include <linux/mroute.h>
 #include <linux/init.h>
 #include <linux/in6.h>
 #include <linux/inetdevice.h>
@@ -656,6 +657,7 @@ void ip_tunnel_xmit(struct sk_buff *skb, struct net_device *dev,
 	struct rtable *rt;		/* Route to the other host */
 	unsigned int max_headroom;	/* The extra header space needed */
 	__be32 dst;
+	int err;
 	bool connected;
 
 	inner_iph = (const struct iphdr *)skb_inner_network_header(skb);
@@ -794,8 +796,10 @@ void ip_tunnel_xmit(struct sk_buff *skb, struct net_device *dev,
 		return;
 	}
 
-	iptunnel_xmit(NULL, rt, skb, fl4.saddr, fl4.daddr, protocol, tos, ttl,
-		      df, !net_eq(tunnel->net, dev_net(dev)));
+	err = iptunnel_xmit(NULL, rt, skb, fl4.saddr, fl4.daddr, protocol,
+			    tos, ttl, df, !net_eq(tunnel->net, dev_net(dev)));
+	iptunnel_xmit_stats(err, &dev->stats, dev->tstats);
+
 	return;
 
 #if IS_ENABLED(CONFIG_IPV6)

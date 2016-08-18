@@ -13,6 +13,7 @@
 #include <linux/module.h>
 #include <linux/err.h>
 #include <linux/slab.h>
+#include <linux/workqueue.h>
 #include <linux/leds.h>
 #include <linux/mfd/max8997.h>
 #include <linux/mfd/max8997-private.h>

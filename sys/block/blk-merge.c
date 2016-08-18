@@ -7,8 +7,6 @@
 #include <linux/blkdev.h>
 #include <linux/scatterlist.h>
 
-#include <trace/events/block.h>
-
 #include "blk.h"
 
 static struct bio *blk_bio_discard_split(struct request_queue *q,
@@ -189,7 +187,6 @@ void blk_queue_split(struct request_queue *q, struct bio **bio,
 		split->bi_rw |= REQ_NOMERGE;
 
 		bio_chain(split, *bio);
-		trace_block_split(q, split, (*bio)->bi_iter.bi_sector);
 		generic_make_request(*bio);
 		*bio = split;
 	}
@@ -304,6 +301,7 @@ static int blk_phys_contig_segment(struct request_queue *q, struct bio *bio,
 				   struct bio *nxt)
 {
 	struct bio_vec end_bv = { NULL }, nxt_bv;
+	struct bvec_iter iter;
 
 	if (!blk_queue_cluster(q))
 		return 0;
@@ -315,8 +313,11 @@ static int blk_phys_contig_segment(struct request_queue *q, struct bio *bio,
 	if (!bio_has_data(bio))
 		return 1;
 
-	bio_get_last_bvec(bio, &end_bv);
-	bio_get_first_bvec(nxt, &nxt_bv);
+	bio_for_each_segment(end_bv, bio, iter)
+		if (end_bv.bv_len == iter.bi_size)
+			break;
+
+	nxt_bv = bio_iovec(nxt);
 
 	if (!BIOVEC_PHYS_MERGEABLE(&end_bv, &nxt_bv))
 		return 0;
