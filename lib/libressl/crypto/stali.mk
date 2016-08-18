@@ -3,7 +3,7 @@ ROOT=../../..
 include $(ROOT)/config.mk
 
 CFLAGS = -I../include -I. -I../include/compat -Iasn1 -Ievp -Imodes
-CPPFLAGS = -D_DEFAULT_SOURCE -D_BSD_SOURCE -D_POSIX_SOURCE -D_GNU_SOURCE -DOPENSSL_NO_HW_PADLOCK
+CPPFLAGS += -D_DEFAULT_SOURCE -D_BSD_SOURCE -D_POSIX_SOURCE -D_GNU_SOURCE -DOPENSSL_NO_HW_PADLOCK -DOPENSSL_NO_ASM 
 OBJS = ocsp/ocsp_prn.o\
 	ocsp/ocsp_lib.o\
 	ocsp/ocsp_cl.o\
@@ -66,19 +66,15 @@ OBJS = ocsp/ocsp_prn.o\
 	bn/bn_mul.o\
 	bn/bn_sqr.o\
 	bn/bn_lib.o\
-	bn/mont-elf-x86_64.o\
 	bn/bn_shift.o\
 	bn/bn_nist.o\
 	bn/bn_exp.o\
 	bn/bn_word.o\
 	bn/bn_mpi.o\
-	bn/mont5-elf-x86_64.o\
-	bn/gf2m-elf-x86_64.o\
 	bn/bn_ctx.o\
 	bn/bn_recp.o\
 	bn/bn_mod.o\
 	bn/bn_exp2.o\
-	bn/modexp512-elf-x86_64.o\
 	bn/bn_mont.o\
 	bn/bn_kron.o\
 	bn/bn_err.o\
@@ -95,9 +91,10 @@ OBJS = ocsp/ocsp_prn.o\
 	rc2/rc2_skey.o\
 	rc2/rc2cfb64.o\
 	camellia/cmll_ecb.o\
-	camellia/cmll-elf-x86_64.o\
+	camellia/cmll_cbc.o\
 	camellia/cmll_ofb.o\
 	camellia/cmll_cfb.o\
+	camellia/camellia.o\
 	camellia/cmll_misc.o\
 	camellia/cmll_ctr.o\
 	rsa/rsa_none.o\
@@ -133,7 +130,6 @@ OBJS = ocsp/ocsp_prn.o\
 	err/err_all.o\
 	err/err_prn.o\
 	err/err.o\
-	md5/md5-elf-x86_64.o\
 	md5/md5_dgst.o\
 	md5/md5_one.o\
 	bf/bf_ecb.o\
@@ -141,18 +137,15 @@ OBJS = ocsp/ocsp_prn.o\
 	bf/bf_enc.o\
 	bf/bf_cfb64.o\
 	bf/bf_skey.o\
-	aes/aesni-sha1-elf-x86_64.o\
+	aes/aes_cbc.o\
 	aes/aes_ofb.o\
-	aes/aesni-elf-x86_64.o\
+	aes/aes_core.o\
 	aes/aes_misc.o\
-	aes/aes-elf-x86_64.o\
 	aes/aes_ctr.o\
-	aes/bsaes-elf-x86_64.o\
 	aes/aes_ige.o\
 	aes/aes_cfb.o\
 	aes/aes_wrap.o\
 	aes/aes_ecb.o\
-	aes/vpaes-elf-x86_64.o\
 	asn1/a_strex.o\
 	asn1/t_crl.o\
 	asn1/x_algor.o\
@@ -338,8 +331,8 @@ OBJS = ocsp/ocsp_prn.o\
 	compat/timingsafe_bcmp.o\
 	compat/reallocarray.o\
 	compat/timingsafe_memcmp.o\
-	rc4/rc4-elf-x86_64.o\
-	rc4/rc4-md5-elf-x86_64.o\
+	rc4/rc4_enc.o\
+	rc4/rc4_skey.o\
 	pkcs7/pkcs7err.o\
 	pkcs7/pk7_asn1.o\
 	pkcs7/bio_pk7.o\
@@ -358,7 +351,6 @@ OBJS = ocsp/ocsp_prn.o\
 	modes/gcm128.o\
 	modes/ofb128.o\
 	modes/ccm128.o\
-	modes/ghash-elf-x86_64.o\
 	modes/ctr128.o\
 	modes/xts128.o\
 	modes/cts128.o\
@@ -375,11 +367,8 @@ OBJS = ocsp/ocsp_prn.o\
 	o_init.o\
 	sha/sha1_one.o\
 	sha/sha1dgst.o\
-	sha/sha512-elf-x86_64.o\
 	sha/sha256.o\
 	sha/sha512.o\
-	sha/sha1-elf-x86_64.o\
-	sha/sha256-elf-x86_64.o\
 	dsa/dsa_prn.o\
 	dsa/dsa_asn1.o\
 	dsa/dsa_ossl.o\
@@ -413,9 +402,8 @@ OBJS = ocsp/ocsp_prn.o\
 	bio/b_sock.o\
 	bio/bss_null.o\
 	mem_clr.o\
-	cpuid-elf-x86_64.o\
 	whrlpool/wp_dgst.o\
-	whrlpool/wp-elf-x86_64.o\
+	whrlpool/wp_block.o\
 	des/ede_cbcm_enc.o\
 	des/xcbc_enc.o\
 	des/rand_key.o\

@@ -2,12 +2,16 @@ ROOT=../../..
 
 include $(ROOT)/config.mk
 
-CPPFLAGS += -DPARSER=\"/tmp/yaccpar\"
+CPPFLAGS = $(HOSTCPPFLAGS) -DPARSER=\"/tmp/yaccpar\"
 LDFLAGS += -L. -ly
 BIN = yacc
 OBJS = y1.o y2.o y3.o y4.o y5.o getopt.o
 LOBJS = libmai.o libzer.o
 CLEAN_FILES = $(LOBJS) liby.a
+CC = $(HOSTCC)
+AR = $(HOSTAR)
+RANLIB = $(HOSTRANLIB)
+CFLAGS = $(HOSTCFLAGS)
 
 include $(ROOT)/mk/bin.mk
 

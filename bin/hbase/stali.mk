@@ -7,13 +7,13 @@ SUBDIRS =\
 	_install\
 	stty\
 	awk\
-	patch\
-	diff\
-	dc\
 	fmt\
 	hd\
 	bc\
 	pgrep\
 	lex
+#patch\
+#diff\
+#dc\
 
 include $(ROOT)/mk/dir.mk

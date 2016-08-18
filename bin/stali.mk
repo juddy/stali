@@ -7,19 +7,20 @@ SUBDIRS = hbase\
 	smdev\
 	utmp\
 	mksh\
-	e2fsprogs\
-	parted\
 	libarchive\
+	curl\
 	ssh\
 	rc\
 	sdhcp\
 	iproute2\
-	curl\
 	vis\
 	kbd\
 	gzip\
 	abduco\
 	dvtm\
 	git
+
+#	e2fsprogs\
+#	parted\
 
 include $(ROOT)/mk/dir.mk

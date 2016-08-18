@@ -25,4 +25,4 @@ proctab.c: gen/maketab
 
 gen/maketab: ytab.h gen/maketab.c
 	@echo LD $@
-	@$(CC) gen/maketab.c -o $@ -static
+	@$(HOSTCC) gen/maketab.c -o $@ -static
